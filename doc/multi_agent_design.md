@@ -1,0 +1,230 @@
+# 多 Agent 引擎设计
+
+## 概述
+
+`yzrws` 不绑定特定的 Code Agent，而是通过**适配器模式**统一调度不同的 Agent 引擎。
+当前主要适配两个引擎：
+
+| 引擎 | 规则文件 | 恢复会话 | 非交互执行 |
+| --- | --- | --- | --- |
+| Claude Code | `CLAUDE.md`（约定式加载） | `claude --resume <id>` | `claude -p "prompt"` |
+| OpenCode | `instructions` 数组（显式配置） | `opencode run -s <id>` | `opencode run "prompt"` |
+
+核心原则：**CLAUDE.md 是唯一的项目规则源**，适配器负责将规则文件桥接到各引擎的配置格式。
+
+## 架构
+
+```text
+yzrws (调度层)
+  ├── engine/
+  │     ├── base.py          # 引擎抽象基类
+  │     ├── claude_code.py   # Claude Code 适配器
+  │     └── opencode.py      # OpenCode 适配器
+  └── workitem.py            # workitem 管理（读取 setting.json、session_id 等）
+```
+
+## 引擎抽象
+
+所有 Agent 引擎实现统一的抽象接口：
+
+```python
+class AgentEngine(ABC):
+    """Agent 引擎抽象基类。"""
+
+    name: str  # 引擎标识：claude-code / opencode
+
+    @abstractmethod
+    def start(self, workitem_dir: Path) -> str:
+        """启动新的交互式会话，返回 session_id。"""
+
+    @abstractmethod
+    def resume(self, workitem_dir: Path, session_id: str) -> str:
+        """恢复指定会话，返回 session_id。"""
+
+    @abstractmethod
+    def run(self, workitem_dir: Path, prompt: str) -> str:
+        """非交互执行，返回输出。"""
+
+    @abstractmethod
+    def sync_rules(self, workitem_dir: Path) -> None:
+        """将 CLAUDE.md 同步到引擎原生的规则格式。"""
+
+    @abstractmethod
+    def validate_session(self, session_id: str) -> bool:
+        """检查 session 是否仍存在且可恢复。"""
+
+    def save_session(self, workitem_dir: Path, session_id: str, **meta) -> None:
+        """会话结束后写入 session.json（含 status / updated_at 等）。"""
+        ...
+```
+
+> Session 元数据的完整结构、状态机和引擎切换流程见 [`session_design.md`](./session_design.md)。
+
+## 适配器实现
+
+### Claude Code 适配器
+
+```python
+class ClaudeCodeEngine(AgentEngine):
+    name = "claude-code"
+
+    def start(self, workitem_dir):
+        # claude --print 在 workitem 目录下启动
+        # CLAUDE.md 会被自动加载，无需额外同步
+        ...
+
+    def resume(self, workitem_dir):
+        session_id = self._read_session_id(workitem_dir)
+        # claude --resume <session_id>
+        ...
+
+    def run(self, workitem_dir, prompt):
+        # claude -p "prompt" --output-format json
+        ...
+
+    def sync_rules(self, workitem_dir):
+        # Claude Code 自动加载 CLAUDE.md，无需额外操作
+        pass
+
+    def save_session_id(self, workitem_dir, session_id):
+        # 写入 workitem_dir/session_id
+        ...
+```
+
+### OpenCode 适配器
+
+```python
+class OpenCodeEngine(AgentEngine):
+    name = "opencode"
+
+    def start(self, workitem_dir):
+        self.sync_rules(workitem_dir)
+        # opencode（在 workitem 目录下启动 TUI）
+        ...
+
+    def resume(self, workitem_dir):
+        self.sync_rules(workitem_dir)
+        session_id = self._read_session_id(workitem_dir)
+        # opencode run -s <session_id>
+        ...
+
+    def run(self, workitem_dir, prompt):
+        self.sync_rules(workitem_dir)
+        # opencode run "prompt" --format json
+        ...
+
+    def sync_rules(self, workitem_dir):
+        # 生成 opencode.json，instructions 指向 CLAUDE.md
+        # 如果 opencode.json 已存在，只更新 instructions 字段
+        ...
+
+    def save_session_id(self, workitem_dir, session_id):
+        # 写入 workitem_dir/session_id
+        ...
+```
+
+### OpenCode 规则桥接
+
+OpenCode 不像 Claude Code 那样约定式加载 `CLAUDE.md`，而是通过配置文件的 `instructions` 字段显式指定规则文件。
+适配器在启动前自动生成 / 更新 `opencode.json`：
+
+```jsonc
+// <workitem>/opencode.json（自动生成，不纳入 git）
+{
+  "instructions": ["CLAUDE.md"],
+  // 用户自定义配置通过 workitem 的 setting.json 合并
+}
+```
+
+> `opencode.json` 是自动生成的桥接文件，加入 `.gitignore`。
+> 用户的自定义配置（模型、MCP 等）放在 `setting.json` 中，由适配器在启动时合并。
+
+## workitem 配置
+
+### setting.json
+
+每个 workitem 的 `setting.json` 新增 `engine` 字段，指定使用的 Agent 引擎：
+
+```jsonc
+{
+  "engine": "claude-code",        // 引擎选择：claude-code / opencode
+  "model": "claude-sonnet-4-6",   // 模型（传给引擎）
+  "provider": "anthropic",        // Provider 引用（对应 provider.json 中的配置）
+  "env": {}                       // 传递给引擎的额外环境变量
+}
+```
+
+### 引擎选择策略
+
+1. **workitem 级别**：`setting.json` 中的 `engine` 字段（最高优先级）
+2. **全局默认**：`~/.config/yzrws/config.json` 中的 `default_engine` 字段
+3. **兜底**：`claude-code`
+
+```sh
+# 创建 workitem 时指定引擎
+yzrws create workitem my-task --engine opencode
+
+# 切换已有 workitem 的引擎
+yzrws config set engine opencode
+```
+
+## 命令集成
+
+### yzrws start
+
+启动 workitem 的 Agent 会话（核心命令）：
+
+```sh
+# 启动（新会话）
+yzrws start <workitem_name>
+
+# 恢复（继续上次会话）
+yzrws start <workitem_name> --resume
+
+# 指定引擎（覆盖 setting.json）
+yzrws start <workitem_name> --engine opencode
+```
+
+内部流程：
+
+```text
+1. 读取 <workitem>/setting.json，确定引擎
+2. 读取 <workitem>/session_id（如果有）
+3. 调用对应适配器的 sync_rules()
+4. 调用 start() 或 resume()
+5. 会话结束后，调用 save_session_id()
+```
+
+### yzrws run
+
+非交互执行（单次任务）：
+
+```sh
+yzrws run <workitem_name> "帮我总结一下这个项目"
+```
+
+## Session 管理
+
+会话元数据统一存放在结构化的 `session.json` 中（取代原设计的 `session_id` 文件）。
+切换引擎时，当前会话归档到 `sessions/` 子目录，历史会话按引擎保留。
+
+```text
+<workitem>/
+├── session.json                              # 当前活跃会话
+└── sessions/                                 # 历史会话归档
+    ├── claude-code_20260606T100000.json
+    └── opencode_20260605T150000.json
+```
+
+> 完整的元数据结构、状态机、引擎切换流程和迁移兼容方案见 [`session_design.md`](./session_design.md)。
+
+## 文件归属
+
+| 文件 | 归属 | 是否纳入 git |
+| --- | --- | --- |
+| `CLAUDE.md` | 用户编写，唯一规则源 | ✓ |
+| `setting.json` | 用户配置（引擎、模型等） | ✓ |
+| `session.json` | 当前活跃会话元数据 | ✗ |
+| `sessions/` | 历史会话归档 | ✗ |
+| `opencode.json` | 自动生成，桥接规则 | ✗ |
+| `workitem.json` | 元数据 | ✓ |

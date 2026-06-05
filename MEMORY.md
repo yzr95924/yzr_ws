@@ -19,11 +19,19 @@
 
 ### project
 
-<!-- 暂无记录 -->
+- Python 代码统一放在 `scripts/python/` 子目录，不与 shell 脚本混在 `scripts/` 根目录。
+  **Why:** 语言分层清晰，避免脚本目录杂乱；便于后续 Python 代码扩展（如引入 pyproject.toml 管理）。
+  **How to apply:** 新增 Python 脚本时放到 `scripts/python/`；如果未来 Python 代码量增大，可升级为独立的 `python/` 目录。
 
 ### feedback
 
-<!-- 暂无记录 -->
+- 脚本实现尽量功能归一，避免相同功能产生多个脚本。
+  **Why:** 减少维护成本，降低用户认知负担；统一入口便于使用和理解。
+  **How to apply:** 新增脚本前先检查是否有可合并的现有脚本；优先扩展已有脚本的参数和功能，而非创建新脚本。
+
+- 文档分工：`doc/` 中的 Markdown 文档侧重详细的设计细节，`README.md` 侧重重点功能的 demo 描述，保持精简不冗长。
+  **Why:** README 是快速上手的入口，应让读者快速了解核心用法；详细设计放在 doc/ 中按需查阅，避免信息过载。
+  **How to apply:** 更新 README 时只写关键命令和简要说明，细节链接到 doc/；写 doc/ 文档时可以展开完整的背景、流程和决策。
 
 ### reference
 
