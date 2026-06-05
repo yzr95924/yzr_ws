@@ -3,7 +3,9 @@
 - 命令格式
     - `yzrws init`
 - 命令具体说明
-1. 创建一个 workspace；
+1. 创建 workspace 的目录，按照 `README.md` 规定创建目录结构；
+2. 若 workspace 的目录已存在，则进行自检逻辑，检查 workspace 的目录元数据是否完整；
+
 ## 创建 workitem
 - 命令格式
     - `yzrws create workitem <workitem_name> `
