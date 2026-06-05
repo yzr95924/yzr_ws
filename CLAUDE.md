@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# yzr_workspace - 源码仓库
+# yzr_ws - 源码仓库
 
 @./MEMORY.md
 
@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目定位
 
-`yzrw` 是一个轻量的 Code Agent 包装工具，用于管理日常工作：
+`yzrws` 是一个轻量的 Code Agent 包装工具，用于管理日常工作：
 - 每个任务作为 `workspace/` 下一个"工作项"目录，配有一个可恢复的 Code Agent Session
 - 不绑定特定 Code Agent；当前主要考虑 Claude Code 与 OpenCode（兼容性以 CLAUDE.md 为准）
 - 知识库设计参考 [karpathy/llm-wiki.md](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
@@ -44,6 +44,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 主语言：Python 3（推荐 3.11+）。特殊场景（胶水/系统脚本/CI 步骤）可用 Bash。
 - 类型注解：公共函数必须有类型签名；模块内部可适度省略。
+- 格式化和 lint：统一使用 [ruff](https://docs.astral.sh/ruff/)——`ruff format` 负责格式，`ruff check` 负责 lint（默认规则集即可），不要引入 black/flake8/isort 等替代工具。
+- Markdown 格式化和 lint：统一使用 [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2)（`markdownlint-cli2` + 默认 `.markdownlint.jsonc` 规则集），范围覆盖仓库内**全部** `*.md` 文件（含 `README.md` / `CLAUDE.md` / `MEMORY.md` / `local_wiki/` / 各 `workspace/<work-item>/`）；不要引入 prettier / remark-lint 等替代工具。
 - 注释与文档字符串：**中文**（与 `README.md`/`CLAUDE.md` 保持一致）；只在 WHY 不显然时写注释，不要复述 WHAT。
+- 中英文 / 中文数字混排时，**必须**在交界处补一个半角空格（`U+0020`），例如 `使用 ruff 进行 format` 而非 `使用ruff进行format`、`共 12 个文件` 而非 `共12个文件`。代码标识符内部的连接（`ruff_check`、`workitem.json`）不受此约束。
 - Bash 脚本开头统一加 `set -euo pipefail`，复杂逻辑使用 `shellcheck` 兜底检查。
 - 当前各子目录仍为骨架（仅 `.gitkeep`），上述规范为"目标态"——新增 Python/Bash 文件时直接遵循。
