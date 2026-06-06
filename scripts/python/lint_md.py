@@ -33,11 +33,12 @@ FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
 def collect_md_files(repo_root: Path) -> list[Path]:
-    """收集仓库内全部 .md 文件（排除 .git 和 node_modules）。"""
+    """收集仓库内全部 .md 文件（排除 .git、node_modules、.venv 等）。"""
+    exclude_dirs = {".git", "node_modules", ".venv", "venv"}
     files: list[Path] = []
     for md in sorted(repo_root.rglob("*.md")):
-        parts = md.relative_to(repo_root).parts
-        if ".git" in parts or "node_modules" in parts:
+        parts = set(md.relative_to(repo_root).parts)
+        if parts & exclude_dirs:
             continue
         files.append(md)
     return files

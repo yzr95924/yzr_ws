@@ -63,3 +63,10 @@
   代码标识符内部的连接（`ruff_check`、`workitem.json`）不受此约束。
 - Markdown 单行行宽不超过 120 字符（代码块与表格行除外）。
 - Bash 脚本开头统一加 `set -euo pipefail`，复杂逻辑使用 `shellcheck` 兜底检查。
+
+## Skills
+
+@./skills/design-doc-edit/SKILL.md
+
+当用户要求撰写 / 补充设计文档、分析设计方案、对比技术方案时，按此 skill 的流程执行。
+产出物写入 `doc/` 目录，文件名采用 `<topic>_design.md` 格式。

@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""yzrws — Code Agent 工作项管理器主入口。
+
+用法：
+    yzrws init          初始化 workspace
+    yzrws -h            查看所有子命令
+"""
+
+import sys
+from pathlib import Path
+
+# 将 scripts/python 加入 sys.path，以便 import yzrws 包。
+# 这是 scaffolding 阶段的临时方案：等真正打包分发时再换为标准安装方式。
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parent
+sys.path.insert(0, str(_REPO_ROOT / "scripts" / "python"))
+
+from yzrws.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

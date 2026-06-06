@@ -226,3 +226,7 @@ yarn-error.log*
 
 # Claude Code
 .claude/
+
+# vscode
+.vscode/*
+!.vscode/settings.json
