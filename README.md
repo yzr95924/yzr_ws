@@ -50,7 +50,8 @@ bin/                    # 需暴露到 PATH 的可执行入口
 completions/            # shell 命令自动补全脚本
 doc/                    # 核心详细设计文档
 schema/                 # 不同类 wiki 知识的总结模板
-scripts/                # 安装 / helper 脚本
+scripts/                # 仅放 shell 安装 / helper 脚本
+src/                    # Python 代码：主包 src/yzrws/，开发工具 src/devtools/
 skills/                 # 自定义 skill
 MEMORY.md               # 本项目的长期记忆
 CLAUDE.md               # Code Agent 规则
@@ -94,19 +95,54 @@ TODO
 
 ### 模型配置
 
-- `yzrws` 支持给不同的 workitem 配置不同的模型、服务商；Provider 定义存储在 `~/.config/yzrws/provider.json`
+- `yzrws` 支持给不同的 workitem 配置不同的模型、服务商；Provider 配置统一存放在
+  workspace 下的 `<workspace>/.config/provider.json`（**不**维护用户级副本）
 - 交互方式如下：
 
 ```sh
 $> yzrws model provider add
-# 依次提示输入：Base URL、Auth token、Model name
+# 依次提示输入：Provider 名称、Base URL、Auth Key、Model name
 ```
 
-或者直接编辑 `~/.config/yzrws/provider.json`。
+或者直接编辑 `<workspace>/.config/provider.json`。所有字段也可通过
+`--name` / `--base-url` / `--auth-key` / `--model` / `--agent-type`（可多次）参数传入
+以便脚本化。`--agent-type` 用于标注该 Provider 的 `base_url` 兼容的 engine
+（`claude-code` / `opencode`），缺省时兼容所有已注册 engine；workitem 选中不兼容
+的 Provider 时 `yzrws workitem set-model` 会报错。
+
+### 给 workitem 绑定 Provider
+
+```sh
+yzrws workitem set-model <name> --provider <name>   # 绑定（兼容性检查）
+yzrws workitem unset-model <name>                   # 解除（恢复继承 workspace 默认）
+yzrws workitem show <name>                          # 详情 + 回退链解析结果
+```
+
+绑定后 `yzrws start <name>` 启动前会按回退链加载 `(base_url, auth_key, model)`，
+分别注入到 Claude Code 的 `ANTHROPIC_*` 环境变量或 OpenCode 的 `opencode.json`。
 
 ## 常用命令
 
-TODO
+```sh
+# 初始化工作区
+yzrws init
+
+# 创建 / 列举 / 打开工作项
+yzrws create workitem <name> [--engine <engine>] [--start]
+yzrws list
+yzrws start <name> [--engine <engine>] [--new]
+
+# 管理 Provider（workspace 级 .config/provider.json）
+yzrws model provider add [--name <name> --base-url <url> --auth-key <key> --model <model>] [--agent-type <engine>]... [--set-default] [-y]
+yzrws model provider list
+yzrws model provider remove <name> [-y]
+yzrws model provider set-default <name>
+
+# 给 workitem 绑定 Provider（生效的 model 由 yzrws start 按回退链加载）
+yzrws workitem set-model <name> --provider <name>
+yzrws workitem unset-model <name>
+yzrws workitem show <name>
+```
 
 ## 其他详细设计
 
@@ -114,6 +150,10 @@ TODO
 
 - 命令设计：[`./doc/command_design.md`](./doc/command_design.md)
 - 元数据管理：[`./doc/metadata_design.md`](./doc/metadata_design.md)
-- Outline Wiki 对接：[`./doc/outline_wiki_design.md`](./doc/outline_wiki_design.md)
+- 多 Agent 引擎：[`./doc/multi_agent_design.md`](./doc/multi_agent_design.md)
+- Provider 配置：[`./doc/provider_design.md`](./doc/provider_design.md)
+- 工作项创建：[`./doc/workitem_create_design.md`](./doc/workitem_create_design.md)
+- workspace 初始化：[`./doc/workspace_init_design.md`](./doc/workspace_init_design.md)
 - Session 管理：[`./doc/session_design.md`](./doc/session_design.md)
 - 环境配置：[`./doc/setup_design.md`](./doc/setup_design.md)
+- Outline Wiki 对接：[`./doc/outline_wiki_design.md`](./doc/outline_wiki_design.md)（骨架）

@@ -16,6 +16,9 @@ from yzrws.output import (
 )
 from yzrws.workspace import InitFatalError
 
+# 顶层 --help 显示的简短描述（cli.py 的 _command_help 读取此属性）
+HELP = "初始化 workspace 目录结构"
+
 
 def run(args: argparse.Namespace) -> int:
     """执行 `yzrws init`，返回进程退出码（0 = 成功，1 = 失败）。
@@ -24,6 +27,16 @@ def run(args: argparse.Namespace) -> int:
       - 成功 / 部分补全 → banner + 路径 + 6 项清单 + 底部状态
       - 致命错误（路径被文件占用 / 无写权限）→ banner + 路径 + 错误行
     """
+    # 处理 --help
+    if args.subcmd_argv and args.subcmd_argv[0] in ("-h", "--help"):
+        print("用法: yzrws init")
+        print()
+        print(HELP)
+        print()
+        print("在 ~/yzr_workspace 创建 workspace 目录结构。")
+        print("支持多次执行：已存在的项目不覆盖，缺失的项目自动补全。")
+        return 0
+
     workspace_path = paths.get_workspace_path()
     print_banner("Workspace 初始化")
     print(f"路径：{workspace_path}")

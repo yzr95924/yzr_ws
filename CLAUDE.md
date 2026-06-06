@@ -9,8 +9,9 @@
 ## 项目定位
 
 - `yzrws` 是轻量的 Code Agent 包装工具，把日常工作拆解为"工作项"（work item）管理
-- 每个工作项 = `~/yzr_workspace/<work-item>/` 下一个目录，含元数据 `workitem.json` / `session_id`、
-  工作项本地的 `CLAUDE.md` / `setting.json`，以及 `raw/`（原始语料）/ `local_wiki/`（工作项本地知识）子目录
+- 每个工作项 = `~/yzr_workspace/<work-item>/` 下一个目录，含元数据 `workitem.json` /
+  `session.json`（会话元数据）、工作项本地的 `CLAUDE.md` / `setting.json`，以及
+  `raw/`（原始语料）/ `local_wiki/`（工作项本地知识）子目录
 - 不绑定特定 Code Agent；主要适配 Claude Code 与 OpenCode（兼容性以 `CLAUDE.md` 为准）
 - 知识库设计参考 [karpathy/llm-wiki.md](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 
@@ -20,9 +21,10 @@
 | --- | --- |
 | `bin/` | 需暴露到 `PATH` 的可执行入口（`yzrws` 主命令等） |
 | `completions/` | shell 命令自动补全脚本 |
-| `doc/` | 设计文档；当前已有：[`command_design.md`](./doc/command_design.md)（命令集）/ `metadata_design.md` / `outline_wiki_design.md` / `session_design.md`（多数仍为骨架） |
+| `doc/` | 设计文档；当前已有：[`command_design.md`](./doc/command_design.md)（命令集）/ [`metadata_design.md`](./doc/metadata_design.md) / [`multi_agent_design.md`](./doc/multi_agent_design.md) / [`provider_design.md`](./doc/provider_design.md) / [`setup_design.md`](./doc/setup_design.md) / [`session_design.md`](./doc/session_design.md) / [`workitem_create_design.md`](./doc/workitem_create_design.md) / [`workspace_init_design.md`](./doc/workspace_init_design.md)（部分仍为骨架） |
 | `schema/` | 不同类 wiki 知识的总结模板 |
-| `scripts/` | Shell 安装 / helper 脚本；Python 代码统一放在 `scripts/python/` |
+| `scripts/` | Shell 安装 / helper 脚本 |
+| `src/` | Python 代码；主包 `src/yzrws/`，开发工具（lint 调度器）`src/devtools/` |
 | `skills/` | 自定义 skill |
 
 > 各目录目前仅含 `.gitkeep` 与少量种子文件，仓库处于"骨架"阶段，按需填入实现。
@@ -42,7 +44,9 @@
   - **`~/yzr_workspace/MEMORY.md`**：用户日常工作的跨工作项长期记忆，与本仓库无关
   - **工作项内的 `CLAUDE.md`**：该工作项专属的"为什么"
 - 全局知识库（`~/yzr_workspace/knowledge/`）与工作项本地知识（`local_wiki/`）均按需懒加载（`ls` / `grep` / `Read`），**不要全量加载**到上下文。
-- 模型 / 服务商配置位于 `~/.config/yzrws/provider.json`，通过 `yzrws model provider add` 交互添加（详见 README）。
+- 模型 / 服务商（Provider）配置统一存放在 workspace 下的 `<workspace>/.config/provider.json`，
+  通过 `yzrws model provider add` 交互添加（详见 [README.md](./README.md)）。
+  没有用户级副本——所有 Provider 与 workspace 同生命周期。
 
 ## 代码风格
 

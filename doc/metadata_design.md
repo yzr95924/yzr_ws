@@ -8,6 +8,12 @@
 核心原则：**文件系统是唯一真相源，`metadata.json` 只存储不可派生的信息和性能敏感的索引缓存**。
 任何可以从文件系统直接推导的数据，都不应重复存储在 `metadata.json` 中。
 
+> **未实现的命令**：本文档描述的命令中，`yzrws info` / `yzrws status` / `yzrws resume`
+> / `yzrws delete workitem` / `yzrws archive <workitem>` / `yzrws sync` / `yzrws doctor`
+> / `yzrws migrate` / `yzrws config set` 等**尚未实现**——这些是设计阶段规划的能力，
+> 出现在本文档中仅作"metadata.json 应支持这些字段"的契约说明。
+> 已实现的命令见 [`command_design.md`](./command_design.md) 与 README "常用命令"小节。
+
 ## 场景分析
 
 ### 场景一：workspace 信息展示
@@ -266,8 +272,8 @@ yzrws sync
 
 | 数据 | 应放在 | 理由 |
 | --- | --- | --- |
-| 默认引擎 / 模型 | `~/.config/yzrws/config.json` | 用户级全局配置，跨 workspace 共享 |
-| Provider 信息 | `<workspace>/.config/provider.json` 或 `~/.config/yzrws/provider.json` | 认证信息独立管理，详见 [provider_design.md](./provider_design.md) |
+| 默认引擎 | 由 `commands/_create_workitem.py::DEFAULT_ENGINE` 兜底（值为 `claude-code`） | 引擎是工具内置常量，不在 workspace 范围内管理 |
+| Provider 信息 | `<workspace>/.config/provider.json`（**不**维护用户级副本） | 认证信息与 workspace 同生命周期，详见 [provider_design.md](./provider_design.md) |
 | 工作项详细元数据 | `<workitem>/workitem.json` | 工作项自治，不集中管理 |
 | Session 信息 | `<workitem>/session.json` | 工作项级别的会话状态 |
 | 知识库文件内容 | `knowledge/*.md` 本身 | 文件即数据，不二次索引 |

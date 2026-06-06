@@ -4,5 +4,9 @@
     "line_length": 120,
     "code_blocks": false,
     "tables": false
+  },
+  // 允许不同父级下的同名标题（如 init 和 create workitem 都有 ### 命令格式）
+  "MD024": {
+    "siblings_only": true
   }
 }

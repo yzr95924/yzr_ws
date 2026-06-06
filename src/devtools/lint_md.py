@@ -6,8 +6,8 @@
   2. 中英文 / 中文数字交界处空格检查（代码块、行内代码、URL 除外）
 
 用法：
-  python3 scripts/python/lint_md.py          # 检查全部 .md 文件
-  python3 scripts/python/lint_md.py fix      # 自动修复可修复的问题
+  python3 src/devtools/lint_md.py          # 检查全部 .md 文件
+  python3 src/devtools/lint_md.py fix      # 自动修复可修复的问题
 """
 
 import re

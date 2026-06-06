@@ -82,7 +82,7 @@ class InspectionResult:
 # ==================================================================
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
     """返回带本地时区偏移的 ISO 8601 时间戳。
 
     使用 astimezone() 而非裸 datetime.now()，保证带 "+08:00" 这类偏移，
@@ -91,7 +91,7 @@ def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def _atomic_write_text(path: Path, content: str) -> None:
+def atomic_write_text(path: Path, content: str) -> None:
     """原子写入文本：tmp + os.replace。写失败时清理 tmp。"""
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
     try:
@@ -104,10 +104,10 @@ def _atomic_write_text(path: Path, content: str) -> None:
         raise
 
 
-def _atomic_write_json(path: Path, data: dict) -> None:
+def atomic_write_json(path: Path, data: dict) -> None:
     """原子写入 JSON 对象，ensure_ascii=False 以保留中文可读性。"""
     payload = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-    _atomic_write_text(path, payload)
+    atomic_write_text(path, payload)
 
 
 def _check_writable(workspace: Path) -> None:
@@ -304,7 +304,7 @@ def _ensure_gitkeep(directory: Path) -> None:
     gitkeep = directory / ".gitkeep"
     if gitkeep.exists():
         return
-    _atomic_write_text(gitkeep, "")
+    atomic_write_text(gitkeep, "")
 
 
 def _write_metadata_if_missing(workspace: Path) -> bool:
@@ -316,13 +316,13 @@ def _write_metadata_if_missing(workspace: Path) -> bool:
     metadata = workspace / "metadata.json"
     if metadata.exists():
         return False
-    now = _now_iso()
+    now = now_iso()
     payload = {
         "version": EXPECTED_METADATA_VERSION,
         "created_at": now,
         "updated_at": now,
     }
-    _atomic_write_json(metadata, payload)
+    atomic_write_json(metadata, payload)
     return True
 
 
@@ -331,7 +331,7 @@ def _write_memory_if_missing(workspace: Path) -> bool:
     memory = workspace / "MEMORY.md"
     if memory.exists():
         return False
-    _atomic_write_text(memory, MEMORY_SKELETON)
+    atomic_write_text(memory, MEMORY_SKELETON)
     return True
 
 

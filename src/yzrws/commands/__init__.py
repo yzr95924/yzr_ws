@@ -15,3 +15,8 @@ REGISTRY: dict[str, Callable[["argparse.Namespace"], int]] = {}
 
 # 触发子模块的副作用：模块 import 时执行 REGISTRY[...] = run
 from . import init as _init  # noqa: E402, F401
+from . import create as _create  # noqa: E402, F401
+from . import list as _list  # noqa: E402, F401
+from . import start as _start  # noqa: E402, F401
+from . import model as _model  # noqa: E402, F401
+from . import workitem as _workitem  # noqa: E402, F401

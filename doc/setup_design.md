@@ -14,11 +14,17 @@
 ```text
 scripts/
 ├── setup.sh               # 环境配置统一入口
-├── lint.sh                # lint 检查统一入口
-└── python/
+└── lint.sh                # lint 检查统一入口
+
+src/
+├── yzrws/                 # 主包
+└── devtools/
     ├── lint_md.py         # Markdown lint（markdownlint-cli2 + CJK 空格检查）
     └── lint_py.py         # Python lint（ruff format + ruff check）
 ```
+
+> `scripts/` 仅放 shell 脚本；Python 全部在 `src/` 下：
+> 主包 `src/yzrws/`，开发工具（lint 调度器）`src/devtools/`。
 
 ## 依赖清单
 
@@ -84,10 +90,10 @@ ruff:               .venv/bin/ruff                       →  全局 PATH
 
 ```text
 lint.sh
-  ├── python/lint_md.py
+  ├── src/devtools/lint_md.py
   │     ├── markdownlint-cli2    # 标准 Markdown 规则（行宽 120 等）
   │     └── CJK 空格检查         # 中英文 / 中文数字交界处空格（内置）
-  └── python/lint_py.py
+  └── src/devtools/lint_py.py
         ├── ruff format --check  # 代码格式检查
         └── ruff check           # lint 规则检查
 ```

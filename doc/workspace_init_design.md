@@ -328,7 +328,7 @@ def get_workspace_path() -> Path:
 
 | 文件 | 说明 | 纳入版本控制 |
 | --- | --- | --- |
-| `scripts/python/workspace.py` | workspace 初始化 / 自检逻辑 | ✓ |
+| `src/yzrws/workspace.py` | workspace 初始化 / 自检逻辑 | ✓ |
 | `bin/yzrws` | 主命令入口（调用 workspace.py） | ✓ |
 | `~/yzr_workspace/metadata.json` | 运行时工作区元数据 | 由用户决定 |
 | `~/yzr_workspace/MEMORY.md` | 运行时跨工作项记忆 | 由用户决定 |

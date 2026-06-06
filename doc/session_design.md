@@ -8,6 +8,11 @@
 
 本文档是 [`multi_agent_design.md`](./multi_agent_design.md) 中 session 相关设计的细化。
 
+> **未实现的命令**：本文档中提到的 `yzrws start <workitem> --resume` / `yzrws archive`
+> 等命令**尚未实现**；当前 `yzrws start` 的恢复能力由引擎适配器（`engine.resume`）
+> 在 `session_id` 存在时自动调用承担，yzrws 层仅暴露 `--new` 强制新建。
+> 详细命令清单见 [`command_design.md`](./command_design.md)。
+
 ## Session 元数据（session.json）
 
 原设计中 workitem 目录下使用简单的 `session_id` 文件保存会话 ID。

@@ -199,21 +199,17 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 `engine` 字段的确定逻辑（优先级从高到低）：
 
 1. `--engine <engine>` 命令行参数
-2. `~/.config/yzrws/config.json` 中的 `default_engine`
-3. 兜底值 `"claude-code"`
+2. 兜底值 `"claude-code"`（来自 `commands/_create_workitem.py::DEFAULT_ENGINE`）
 
-`model` 和 `provider` 初始为 `null`，运行时由引擎适配器按以下策略查找：
+`model` 和 `provider` 初始为 `null`，运行时由引擎适配器按以下策略查找
+（详见 [`provider_design.md §回退链`](./provider_design.md)）：
 
-1. `setting.json` 中的值（非 null 时使用）
-2. Workspace 级 `<workspace>/.config/provider.json` 中的默认 Provider
-3. 用户级 `~/.config/yzrws/provider.json` 中的默认 Provider
-4. 引擎自身的默认值
+1. `setting.json.provider` 非 `null` → 取该 Provider
+2. `<workspace>/.config/provider.json` 的 `default` 字段指向的 Provider
+3. 引擎自身的内置默认
 
-> 这样设计的好处：workspace 级配置可以为项目设定默认模型，
-> 用户级配置作为跨 workspace 的通用兜底，
-> 显式设置了 `model` 的工作项不受上层配置变更影响。
-> 详细的 Provider 回退链和多层合并规则见
-> [`provider_design.md`](./provider_design.md)。
+> Provider 配置统一存放在 workspace 下的 `<workspace>/.config/provider.json`，
+> 不维护用户级副本。显式设置了 `provider` 的工作项不受上层配置变更影响。
 
 ### CLAUDE.md
 
@@ -390,7 +386,7 @@ $ yzrws create workitem api-refactor
 
 | 文件 | 说明 | 纳入版本控制 |
 | --- | --- | --- |
-| `scripts/python/workitem.py` | workitem 创建逻辑 | ✓ |
+| `src/yzrws/commands/create.py` | workitem 创建入口（yzrws create workitem） | ✓ |
 | `~/yzr_workspace/<name>/workitem.json` | 运行时工作项元数据 | 由用户决定 |
 | `~/yzr_workspace/<name>/setting.json` | 运行时引擎配置 | 由用户决定 |
 | `~/yzr_workspace/<name>/CLAUDE.md` | 运行时工作项上下文 | 由用户决定 |

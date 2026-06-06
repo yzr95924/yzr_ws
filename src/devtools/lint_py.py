@@ -6,8 +6,8 @@
   2. ruff check：lint 规则检查
 
 用法：
-  python3 scripts/python/lint_py.py          # 检查全部 .py 文件
-  python3 scripts/python/lint_py.py fix      # 自动修复（ruff format + ruff check --fix）
+  python3 src/devtools/lint_py.py          # 检查全部 .py 文件
+  python3 src/devtools/lint_py.py fix      # 自动修复（ruff format + ruff check --fix）
 """
 
 import shutil

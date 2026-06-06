@@ -19,9 +19,12 @@
 
 ### project
 
-- Python 代码统一放在 `scripts/python/` 子目录，不与 shell 脚本混在 `scripts/` 根目录。
-  **Why:** 语言分层清晰，避免脚本目录杂乱；便于后续 Python 代码扩展（如引入 pyproject.toml 管理）。
-  **How to apply:** 新增 Python 脚本时放到 `scripts/python/`；如果未来 Python 代码量增大，可升级为独立的 `python/` 目录。
+- Python 代码全部放在 `src/` 下：主包 `src/yzrws/`，开发工具（lint 调度器）
+  `src/devtools/`；`scripts/` 仅保留 shell 脚本。
+  **Why:** 语言分层清晰；`src/` 是 Python 社区惯用的产品代码布局；让 `scripts/`
+  与 shell 语义对齐。
+  **How to apply:** 新增 Python 模块时放到 `src/yzrws/` 对应子包；新增 Python
+  开发工具（lint 钩子 / 迁移脚本等）放到 `src/devtools/`。
 
 ### feedback
 
