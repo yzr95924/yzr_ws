@@ -52,7 +52,6 @@ doc/                    # 核心详细设计文档
 schema/                 # 不同类 wiki 知识的总结模板
 scripts/                # 仅放 shell 安装 / helper 脚本
 src/                    # Python 代码：主包 src/yzrws/，开发工具 src/devtools/
-skills/                 # 自定义 skill
 MEMORY.md               # 本项目的长期记忆
 CLAUDE.md               # Code Agent 规则
 README.md               # 项目说明

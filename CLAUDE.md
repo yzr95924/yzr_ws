@@ -25,7 +25,6 @@
 | `schema/` | 不同类 wiki 知识的总结模板 |
 | `scripts/` | Shell 安装 / helper 脚本 |
 | `src/` | Python 代码；主包 `src/yzrws/`，开发工具（lint 调度器）`src/devtools/` |
-| `skills/` | 自定义 skill |
 
 > 各目录目前仅含 `.gitkeep` 与少量种子文件，仓库处于"骨架"阶段，按需填入实现。
 >
@@ -70,7 +69,10 @@
 
 ## Skills
 
-@./skills/design-doc-edit/SKILL.md
+项目自定义 skill 不随仓库分发，以"第三方工具"模式由 Code Agent 通过其自身的
+skill 加载机制提供；仓库内不再保留 `./skills/` 目录或对应子模块。按需提示
+agent 调用 skill 时直接使用 skill 名即可，不要再用
+`@./skills/<name>/SKILL.md` 形式内联引用（路径已不存在）。
 
-当用户要求撰写 / 补充设计文档、分析设计方案、对比技术方案时，按此 skill 的流程执行。
-产出物写入 `doc/` 目录，文件名采用 `<topic>_design.md` 格式。
+例如 `design-doc-edit`：当用户要求撰写 / 补充设计文档、分析设计方案、对比技术方案时，
+按此 skill 的流程执行；产出物写入 `doc/` 目录，文件名采用 `<topic>_design.md` 格式。

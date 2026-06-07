@@ -26,17 +26,15 @@
   **How to apply:** 新增 Python 模块时放到 `src/yzrws/` 对应子包；新增 Python
   开发工具（lint 钩子 / 迁移脚本等）放到 `src/devtools/`。
 
-- 项目自定义 skill 集中存放在 `./skills/`（git submodule，
-  远端 `git@github.com:yzr95924/my_SKILL.git`）；新增 / 调整 skill 后
-  在 `.claude/skills/<name>` 下建软链接（指向 `../../skills/<name>`），
-  把 skill 注册到 agent。
-  **Why:** skill 实现集中到独立仓库便于跨项目复用与版本管理；
-  软链接让 `./skills/` 成为 single source of truth，避免在不同位置
-  重复实现 / 漂移。
-  **How to apply:** 写 / 改 skill 时直接改 `./skills/<name>/SKILL.md`
-  （以及同目录下的附属文件如 `template.md`），并保证 `.claude/skills/`
-  下有对应的软链接；CLAUDE.md / README.md / 其他文档需要引用 skill 时
-  用 `@./skills/<name>/SKILL.md` 形式。
+- 项目自定义 skill 不随仓库分发，而是以"第三方工具"模式管理——由 Code Agent
+  通过其自身的 skill 安装 / 发现机制加载，与本仓库解耦。
+  **Why:** skill 的迭代节奏与 `yzrws` 工具本身相互独立；维护者可以单独
+  更新 / 替换 skill，而不必把 `./skills/` 子目录或 `.claude/skills/`
+  软链接之类的胶水状态纳入本仓库的版本控制。
+  **How to apply:** 仓库内不再存在 `skills/` 目录或对应子模块；
+  文档 / 注释里不要再用 `@./skills/<name>/SKILL.md` 形式内联引用 skill
+  实现（路径已不存在），需要提示 agent 使用某个 skill 时直接写 skill
+  名即可。
 
 ### feedback
 
