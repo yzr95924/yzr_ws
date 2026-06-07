@@ -344,7 +344,7 @@ workspace 未初始化：
 ### 命令格式
 
 ```text
-yzrws start <name> [--engine <engine>] [--new]
+yzrws start <name> [--engine <engine>]
 ```
 
 - **执行入口**：`bin/yzrws start <name>`（通过 `python -m yzrws start <name>` 等价调用）
@@ -353,18 +353,18 @@ yzrws start <name> [--engine <engine>] [--new]
 | 参数 | 是否必须 | 说明 |
 | --- | --- | --- |
 | `<name>` | ✓ | 工作项名称 |
-| `--engine <engine>` | ✗ | 指定引擎（自动创建或切换引擎时使用） |
-| `--new` | ✗ | 强制启动新会话（不恢复历史 session） |
+| `--engine <engine>` | ✗ | 指定引擎（自动创建或切换引擎时使用；缺省从 setting.json 读） |
 
 ### 行为
 
-`yzrws start <name>` 打开工作项并启动 Agent 会话。处理 5 类场景：
+`yzrws start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
 
 1. **自动创建**：工作项不存在时，自动调用 `create workitem` 逻辑创建，然后启动会话
 2. **启动新会话**：工作项已存在且无 session 记录时，启动新会话
-3. **恢复会话**：工作项已存在且有 session 记录时，恢复上次会话
+3. **恢复会话**：工作项已存在且有 session 记录时，自动恢复上次会话（无需 `--new` 标志）
 4. **引擎切换**：`--engine` 参数与 `setting.json` 不同时，归档旧 session 并切换引擎
-5. **强制新建**：`--new` 参数跳过恢复，直接启动新会话
+
+> session 恢复决策完全自动化：存在则恢复（无论 `setting.json` 是否被改过），不存在则新建。原 `--new` 标志已移除——`yzrws start` 只保留 `<name>` 必填 + `--engine` 可选两个参数。
 
 ### 输出格式
 

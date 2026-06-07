@@ -6,17 +6,15 @@
 #      使 yzrws 可在任意目录下直接调用
 #   2. 调用 install-completions.sh 把 bash/zsh/fish 补全安装到标准目录
 #
-# 与 install-completions.sh 的关系：补全安装的具体路径与 shell 推断逻辑
-# 全部复用 install-completions.sh，本脚本只负责 yzrws 主入口 + 转发参数。
+# 与 install-completions.sh 的关系：补全安装的具体路径规则全部由
+# install-completions.sh 维护，本脚本只负责 yzrws 主入口 + 转发参数。
 #
 # 用法：
-#   ./scripts/install.sh                          # 安装到 ~/.local/bin，按 $SHELL 装补全
+#   ./scripts/install.sh                          # 主命令 + bash/zsh/fish 全部补全（默认）
 #   ./scripts/install.sh --prefix /opt/yzrws      # 整体安装到 /opt/yzrws（需写入权限）
 #   ./scripts/install.sh --bin-dir ~/.local/bin   # 仅指定 bin 目录
-#   ./scripts/install.sh --shell all              # 为所有 shell 装补全
-#   ./scripts/install.sh --shell bash             # 显式指定 shell
-#   ./scripts/install.sh --shell none             # 只装主命令，不动补全
-#   ./scripts/install.sh --no-completions         # 同 --shell none
+#   ./scripts/install.sh --shell bash             # 只装某种 shell 的补全（bash|zsh|fish）
+#   ./scripts/install.sh --no-completions         # 只装主命令，不动补全
 #   ./scripts/install.sh --dest-base /tmp/staging  # 测试场景：补全装到 /tmp/staging/.local/...
 #                                                 # （默认 $HOME，透传给 install-completions.sh）
 
@@ -56,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,21p' "$0"
+            sed -n '2,20p' "$0"
             exit 0
             ;;
         *)
@@ -87,6 +85,14 @@ if [[ ! -f "$COMPLETIONS_SCRIPT" ]]; then
     echo "错误：缺少 $COMPLETIONS_SCRIPT" >&2
     exit 1
 fi
+if [[ -n "$SHELL_TARGET" ]] && [[ "$SHELL_TARGET" != "bash" && "$SHELL_TARGET" != "zsh" && "$SHELL_TARGET" != "fish" ]]; then
+    echo "错误：--shell 只接受 bash / zsh / fish（默认装全部，省略此参数）" >&2
+    exit 2
+fi
+if [[ "$NO_COMPLETIONS" == "true" && -n "$SHELL_TARGET" ]]; then
+    echo "错误：--no-completions 与 --shell 互斥" >&2
+    exit 2
+fi
 
 # 由 --prefix 推导默认 --bin-dir
 if [[ -z "$BIN_DIR" ]]; then
@@ -95,11 +101,6 @@ fi
 if [[ -z "$BIN_DIR" ]]; then
     echo "错误：无法确定 bin 目录" >&2
     exit 2
-fi
-
-# 推断默认 shell（仅在用户既未指定 --shell 也未传 --no-completions 时使用）
-if [[ "$NO_COMPLETIONS" == "false" && -z "$SHELL_TARGET" ]]; then
-    SHELL_TARGET=$(basename "${SHELL:-/bin/bash}")
 fi
 
 # ==================================================================
@@ -142,13 +143,15 @@ fi
 # ==================================================================
 
 echo ""
-if [[ "$NO_COMPLETIONS" == "true" || "$SHELL_TARGET" == "none" ]]; then
-    echo "[2/2] 跳过补全安装（--no-completions / --shell none）"
+if [[ "$NO_COMPLETIONS" == "true" ]]; then
+    echo "[2/2] 跳过补全安装（--no-completions）"
 else
-    echo "[2/2] 安装 shell 补全（shell=$SHELL_TARGET, dest-base=$DEST_BASE）..."
+    # 缺省（SHELL_TARGET 空）：转发 --shell all，一次性装 bash + zsh + fish
+    # 显式指定 SHELL_TARGET：仅装该 shell 的补全
+    effective_target="${SHELL_TARGET:-all}"
+    echo "[2/2] 安装 shell 补全（shell=$effective_target, dest-base=$DEST_BASE）..."
     echo ""
-    # shellcheck disable=SC2086
-    "$COMPLETIONS_SCRIPT" --shell "$SHELL_TARGET" --dest-dir "$DEST_BASE"
+    "$COMPLETIONS_SCRIPT" --shell "$effective_target" --dest-dir "$DEST_BASE"
 fi
 
 # ==================================================================

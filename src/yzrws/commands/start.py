@@ -59,7 +59,7 @@ def run(args: argparse.Namespace) -> int:
       3. 读取 setting.json 确定引擎
       4. 读取 session.json 检查当前 session
       5. 处理引擎切换（自动归档旧 session）
-      6. 启动引擎进程
+      6. 启动引擎进程：session 存在则自动恢复，不存在则新建（无需 --new flag）
       7. 进程退出后更新 session.json
     """
     # 解析子命令参数
@@ -70,20 +70,15 @@ def run(args: argparse.Namespace) -> int:
     )
     parser.add_argument("name", help="工作项名称")
     parser.add_argument("--engine", "-e", help="指定引擎（创建或切换时使用）")
-    parser.add_argument(
-        "--new",
-        action="store_true",
-        help="强制启动新会话（不恢复历史）",
-    )
 
     # 处理 --help
     argv = args.subcmd_argv
     if argv and argv[0] in ("-h", "--help"):
-        print("用法: yzrws start <name> [--engine <engine>] [--new]")
+        print("用法: yzrws start <name> [--engine <engine>]")
         print()
         print(HELP)
         print()
-        print("如果工作项不存在，自动创建；如果已存在，根据 session 信息恢复会话。")
+        print("如果工作项不存在，自动创建；如果已存在，根据 session 信息自动恢复会话。")
         return 0
 
     try:
@@ -96,7 +91,6 @@ def run(args: argparse.Namespace) -> int:
     workspace_path = paths.get_workspace_path()
     name = parsed.name
     cli_engine = parsed.engine
-    force_new = parsed.new
 
     # 1. 前置检查
     if not is_workspace_initialized(workspace_path):
@@ -213,24 +207,24 @@ def run(args: argparse.Namespace) -> int:
             pass  # 旧引擎不可用，跳过清理
         current_session = None
 
-    # 7. 确定是否恢复会话
+    # 7. 确定是否恢复会话：自动决策，无需 flag
+    #    - session 存在且仍有效 → 恢复
+    #    - session 不存在 / 失效 / 当前无 session → 启动新会话
     session_to_resume: SessionInfo | None = None
 
-    if not force_new:
-        # 检查是否有可恢复的 session
-        if current_session and current_session.session_id:
-            # 验证 session 是否存在
-            if engine.validate_session(current_session.session_id):
-                session_to_resume = current_session
-            else:
-                print(f"警告：记录的 session {current_session.session_id} 已不存在")
-        elif current_session is None:
-            # 检查是否有历史 session（引擎切换场景）
-            history = find_latest_session_for_engine(target, engine_name)
-            if history and history.session_id:
-                if engine.validate_session(history.session_id):
-                    session_to_resume = history
-                    print(f"发现历史 {engine_name} 会话：{history.session_id}")
+    if current_session and current_session.session_id:
+        # 验证 session 是否存在
+        if engine.validate_session(current_session.session_id):
+            session_to_resume = current_session
+        else:
+            print(f"警告：记录的 session {current_session.session_id} 已不存在")
+    elif current_session is None:
+        # 检查是否有历史 session（引擎切换场景）
+        history = find_latest_session_for_engine(target, engine_name)
+        if history and history.session_id:
+            if engine.validate_session(history.session_id):
+                session_to_resume = history
+                print(f"发现历史 {engine_name} 会话：{history.session_id}")
 
     # 7.5 同步 MCP 配置到引擎原生位置
     engine.sync_mcp(target, mcp_config)

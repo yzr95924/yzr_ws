@@ -192,7 +192,7 @@ def _collect_provider_fields(args: argparse.Namespace, target_path: Path) -> Pro
         "Model name", args.model, validator=lambda s: bool(s.strip())
     )
 
-    # agent_types：缺省 = "all"（即所有已注册 engine），可重复 --agent-type 限定
+    # agent_types：CLI 多次 --agent-type 优先；否则进入交互式 prompt
     from yzrws.engine import list_engines
 
     engines = list_engines()
@@ -211,25 +211,132 @@ def _collect_agent_types(
     cli_values: list[str] | None,
     engines: list[str],
 ) -> list[str]:
-    """收集 agent_types：CLI 多次 --agent-type > 缺省 = "all"（空列表表示全部）。"""
+    """收集 agent_types：CLI 多次 --agent-type > 缺省 = 交互式 prompt。
+
+    CLI 分支走 `_validate_agent_types`；无 CLI 值时进入交互式 prompt。
+    """
     if cli_values:
-        invalid = [v for v in cli_values if not _is_valid_agent_type_str(v, engines)]
-        if invalid:
-            print(
-                f"[{STATUS_ERROR}] 未知的 --agent-type：{invalid}；"
-                f"当前支持的 engine：{engines}"
-            )
-            raise _AbortError
-        # 去重保持顺序
-        seen: set[str] = set()
-        deduped: list[str] = []
-        for v in cli_values:
-            if v not in seen:
-                seen.add(v)
-                deduped.append(v)
-        return deduped
-    # 缺省：返回空列表，让 Provider.agent_types 缺省值生效（即"全部"）
-    return []
+        return _validate_agent_types(cli_values, engines)
+    return _prompt_agent_types(engines)
+
+
+def _validate_agent_types(
+    cli_values: list[str],
+    engines: list[str],
+) -> list[str]:
+    """校验并规范化 CLI 提供的 agent_types 列表。
+
+    处理 "all" 特殊值：
+      - 单独使用（仅 --agent-type all）：与不传此参数等价，返回空列表
+      - 与具体 engine 混用：报错（语义模糊）
+    """
+    from yzrws.provider import AGENT_TYPE_ALL
+
+    has_all = AGENT_TYPE_ALL in cli_values
+    non_all = [v for v in cli_values if v != AGENT_TYPE_ALL]
+
+    if has_all and non_all:
+        print(
+            f"[{STATUS_ERROR}] --agent-type {AGENT_TYPE_ALL} 不能与具体 engine 混用；"
+            f"收到的非 '{AGENT_TYPE_ALL}' 值：{non_all}"
+        )
+        raise _AbortError
+
+    if has_all:
+        # 单独使用 'all'：与缺省等价，返回空列表让 Provider.agent_types
+        # 缺省值生效（即"全部"），且 JSON 中不写 agent_types 字段
+        return []
+
+    # 常规分支：每个值都必须在已注册 engine 列表中
+    invalid = [v for v in non_all if not _is_valid_agent_type_str(v, engines)]
+    if invalid:
+        print(
+            f"[{STATUS_ERROR}] 未知的 --agent-type：{invalid}；"
+            f"当前支持的 engine：{engines}（或特殊值 '{AGENT_TYPE_ALL}'）"
+        )
+        raise _AbortError
+    # 去重保持顺序
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for v in non_all:
+        if v not in seen:
+            seen.add(v)
+            deduped.append(v)
+    return deduped
+
+
+def _prompt_agent_types(engines: list[str]) -> list[str]:
+    """交互式收集 agent_types（编号选择形式）。
+
+    打印编号菜单：1) all + 已注册 engine 列表；用户输入编号（单选）或
+    逗号分隔的编号组合（多选），留空默认 1（all）。
+
+    'all' 与具体 engine 混用会被拒绝（语义模糊）。
+    """
+    from yzrws.provider import AGENT_TYPE_ALL
+
+    # 菜单：1) all 在前，其后是已注册 engine
+    options: list[str] = [AGENT_TYPE_ALL, *engines]
+
+    print("Agent types:")
+    for idx, name in enumerate(options, start=1):
+        if name == AGENT_TYPE_ALL:
+            print(f"  {idx}) {name}（兼容所有 engine）")
+        else:
+            print(f"  {idx}) {name}")
+
+    label = "请选择（逗号分隔多个，回车默认 1）"
+
+    try:
+        raw = input(f"{label}: ").strip()
+    except EOFError:
+        print(f"\n[{STATUS_ERROR}] 输入中断", file=sys.stderr)
+        raise _AbortError from None
+
+    # 留空 → 默认 1 (all)
+    if not raw:
+        return []
+
+    # 解析逗号分隔的编号
+    tokens = [t.strip() for t in raw.split(",")]
+    tokens = [t for t in tokens if t]  # 应对 ",," 等异常输入
+    if not tokens:
+        return []
+
+    try:
+        indices = [int(t) for t in tokens]
+    except ValueError:
+        print(f"[{STATUS_ERROR}] 输入必须是编号 1-{len(options)}（逗号分隔）：{raw!r}")
+        raise _AbortError
+
+    invalid_range = [i for i in indices if i < 1 or i > len(options)]
+    if invalid_range:
+        print(f"[{STATUS_ERROR}] 编号超出范围 1-{len(options)}：{invalid_range}")
+        raise _AbortError
+
+    # 编号 → 名字，去重保持顺序
+    chosen: list[str] = []
+    seen: set[int] = set()
+    for i in indices:
+        if i in seen:
+            continue
+        seen.add(i)
+        chosen.append(options[i - 1])
+
+    has_all = AGENT_TYPE_ALL in chosen
+    non_all = [n for n in chosen if n != AGENT_TYPE_ALL]
+
+    if has_all and non_all:
+        print(
+            f"[{STATUS_ERROR}] '{AGENT_TYPE_ALL}'（编号 1）不能与具体 engine 混用；"
+            f"收到的非 '{AGENT_TYPE_ALL}' 值：{non_all}"
+        )
+        raise _AbortError
+
+    if has_all:
+        return []
+
+    return non_all
 
 
 def _is_valid_agent_type_str(name: str, engines: list[str]) -> bool:

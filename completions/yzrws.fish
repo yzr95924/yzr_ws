@@ -6,6 +6,24 @@
 #
 # 安装方式：复制到 ~/.config/fish/completions/yzrws.fish，重启 fish；
 # 或运行 scripts/install-completions.sh。
+#
+# 防御性补全原则（与 doc/script_design.md "install-completions.sh" 节对齐）：
+#   - 顶层子命令仅在 "尚未输入任何子命令" 时被补全
+#     （__fish_use_subcommand），避免与二级菜单冲突
+#   - 二级子命令的 complete 规则用
+#     "__fish_seen_subcommand_from <父> and not __fish_seen_subcommand_from <子>"
+#     模式——既要求父级已输入，又排除已输入过的子命令
+#   - 多参"包含"条件必须用 `; and` 显式 AND：
+#     `__fish_seen_subcommand_from A B C` 实际是 OR 语义（任一匹配即返回
+#     true），写成"model provider"会让"yzrws model <Tab>"也命中，
+#     错误地补出 add/list/remove/set-default。正确写法：
+#     `__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider`
+#   - 多参"排除"条件保持原样（OR + not 仍是"任一已见就排除"）
+#   - value-taking flag 加 -r 标记（--engine -r -a ...），fish 自动跳过
+#     flag value 的位置参数计数，不会污染后续 dispatch
+#   - 已注册 engine / 已配置 Provider / 已存在 workitem 等动态值只在
+#     对应位置（_yzrws_engines / _yzrws_providers / _yzrws_workitems）
+#     被调用，越界场景不出现
 
 # ==================================================================
 # 公共 helper
@@ -65,6 +83,13 @@ function __yzrws_engines
     echo opencode
 end
 
+# --agent-type 候选值：在 engine 列表基础上加特殊值 "all"（兼容所有 engine）
+function __yzrws_agent_type_values
+    echo all
+    echo claude-code
+    echo opencode
+end
+
 # ==================================================================
 # 关闭默认 file completion（由各规则按需启用）
 # ==================================================================
@@ -106,9 +131,8 @@ complete -c yzrws -n "__fish_seen_subcommand_from create; and __fish_seen_subcom
 # yzrws start <name>
 complete -c yzrws -n "__fish_seen_subcommand_from start; and not __fish_seen_subcommand_from -l" -fa "(__yzrws_workitems)"
 
-# yzrws start --engine / --new
+# yzrws start --engine
 complete -c yzrws -n "__fish_seen_subcommand_from start" -l engine -s e -r -a "(__yzrws_engines)" -d "指定引擎（创建或切换时使用）"
-complete -c yzrws -n "__fish_seen_subcommand_from start" -l new -d "强制启动新会话（不恢复历史）"
 
 # ==================================================================
 # yzrws model ...
@@ -117,53 +141,65 @@ complete -c yzrws -n "__fish_seen_subcommand_from start" -l new -d "强制启动
 complete -c yzrws -n "__fish_seen_subcommand_from model; and not __fish_seen_subcommand_from provider" -a provider -d "管理 Provider（连接信息、默认 Provider 等）"
 
 # yzrws model provider ...
-complete -c yzrws -n "__fish_seen_subcommand_from model provider; and not __fish_seen_subcommand_from add list remove set-default" -a "add" -d "添加一个 Provider"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider; and not __fish_seen_subcommand_from add list remove set-default" -a "list" -d "列出已配置 Provider"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider; and not __fish_seen_subcommand_from add list remove set-default" -a "remove" -d "删除 Provider"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider; and not __fish_seen_subcommand_from add list remove set-default" -a "set-default" -d "切换默认 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and not __fish_seen_subcommand_from add list remove set-default" -a "add" -d "添加一个 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and not __fish_seen_subcommand_from add list remove set-default" -a "list" -d "列出已配置 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and not __fish_seen_subcommand_from add list remove set-default" -a "remove" -d "删除 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and not __fish_seen_subcommand_from add list remove set-default" -a "set-default" -d "切换默认 Provider"
 
 # yzrws model provider add
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l name -r -d "Provider 名称"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l base-url -r -d "API 端点 URL"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l auth-key -r -d "认证密钥"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l model -r -d "默认模型名称"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l agent-type -r -a "(__yzrws_engines)" -d "该 provider 兼容的 engine（可多次指定）"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l set-default -d "强制将新 Provider 设为默认"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider add" -l yes -s y -d "同名 Provider 存在时跳过确认直接覆盖"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l name -r -d "Provider 名称"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l base-url -r -d "API 端点 URL"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l auth-key -r -d "认证密钥"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l model -r -d "默认模型名称"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l agent-type -r -a "(__yzrws_agent_type_values)" -d "该 provider 兼容的 engine（可多次指定；'all' 表示全部）"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l set-default -d "强制将新 Provider 设为默认"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from add" -l yes -s y -d "同名 Provider 存在时跳过确认直接覆盖"
 
 # yzrws model provider list  （无 flag / 位置参数）
 # yzrws model provider remove <name> [-y]
-complete -c yzrws -n "__fish_seen_subcommand_from model provider remove" -fa "(__yzrws_providers)"
-complete -c yzrws -n "__fish_seen_subcommand_from model provider remove" -l yes -s y -d "跳过确认直接删除"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from remove" -fa "(__yzrws_providers)"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from remove" -l yes -s y -d "跳过确认直接删除"
 
 # yzrws model provider set-default <name>
-complete -c yzrws -n "__fish_seen_subcommand_from model provider set-default" -fa "(__yzrws_providers)"
+complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcommand_from provider; and __fish_seen_subcommand_from set-default" -fa "(__yzrws_providers)"
 
 # ==================================================================
 # yzrws workitem ...
 # ==================================================================
+#
+# 守卫 `and not __fish_seen_subcommand_from create`：
+#   `workitem` 既是顶层子命令，也是 `create` 的二级子命令。`__fish_seen_subcommand_from`
+#   是 OR 语义——只要 `workitem` 出现在命令行任意位置就命中。如果不加 create
+#   排除，下方 5 条 `yzrws workitem <subcmd>` 规则会在
+#   `yzrws create workitem <Tab>` 时也触发，错误地列出 set-model/show 等
+#   本不该出现的位置。
+#
+# create workitem 的反向（yzrws create workitem 下应只见 --engine/--start）
+# 已经天然正确：那些规则用 `__fish_seen_subcommand_from create; and
+# __fish_seen_subcommand_from workitem`，要求 create 必须出现，所以
+# 顶层 `yzrws workitem ...` 不会触发它们。
 
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-model" -d "把 workitem 绑定到某个 Provider"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-model" -d "解除 workitem 的 Provider 绑定"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "show" -d "展示 workitem 完整配置与生效模型"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-outline" -d "为 workitem 启用 Outline MCP"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-outline" -d "解除 workitem 的 Outline MCP 引用"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-model" -d "把 workitem 绑定到某个 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-model" -d "解除 workitem 的 Provider 绑定"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "show" -d "展示 workitem 完整配置与生效模型"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-outline" -d "为 workitem 启用 Outline MCP"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-outline" -d "解除 workitem 的 Outline MCP 引用"
 
 # yzrws workitem set-model <name> --provider <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem set-model" -fa "(__yzrws_workitems)"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem set-model" -l provider -r -a "(__yzrws_providers)" -d "Provider 名称（必须已配置）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-model" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-model" -l provider -r -a "(__yzrws_providers)" -d "Provider 名称（必须已配置）"
 
 # yzrws workitem unset-model <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem unset-model" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from unset-model" -fa "(__yzrws_workitems)"
 
 # yzrws workitem show <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem show" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from show" -fa "(__yzrws_workitems)"
 
 # yzrws workitem set-outline <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem set-outline" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-outline" -fa "(__yzrws_workitems)"
 
 # yzrws workitem unset-outline <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem unset-outline" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from unset-outline" -fa "(__yzrws_workitems)"
 
 # ==================================================================
 # yzrws outline ...
@@ -175,16 +211,16 @@ complete -c yzrws -n "__fish_seen_subcommand_from outline; and not __fish_seen_s
 complete -c yzrws -n "__fish_seen_subcommand_from outline; and not __fish_seen_subcommand_from add show update remove" -a remove -d "删除 Outline 配置"
 
 # yzrws outline add
-complete -c yzrws -n "__fish_seen_subcommand_from outline add" -l endpoint -r -d "Outline 实例 URL"
-complete -c yzrws -n "__fish_seen_subcommand_from outline add" -l auth-token -r -d "Outline API key"
-complete -c yzrws -n "__fish_seen_subcommand_from outline add" -l yes -s y -d "跳过确认提示"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from add" -l endpoint -r -d "Outline 实例 URL"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from add" -l auth-token -r -d "Outline API key"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from add" -l yes -s y -d "跳过确认提示"
 
 # yzrws outline show  （无 flag / 位置参数）
 
 # yzrws outline update
-complete -c yzrws -n "__fish_seen_subcommand_from outline update" -l endpoint -r -d "新的 Outline 实例 URL"
-complete -c yzrws -n "__fish_seen_subcommand_from outline update" -l auth-token -r -d "新的 Outline API key"
-complete -c yzrws -n "__fish_seen_subcommand_from outline update" -l yes -s y -d "跳过确认提示"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from update" -l endpoint -r -d "新的 Outline 实例 URL"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from update" -l auth-token -r -d "新的 Outline API key"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from update" -l yes -s y -d "跳过确认提示"
 
 # yzrws outline remove
-complete -c yzrws -n "__fish_seen_subcommand_from outline remove" -l yes -s y -d "跳过确认提示"
+complete -c yzrws -n "__fish_seen_subcommand_from outline; and __fish_seen_subcommand_from remove" -l yes -s y -d "跳过确认提示"

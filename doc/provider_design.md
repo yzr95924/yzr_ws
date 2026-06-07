@@ -181,7 +181,7 @@ Provider 配置文件始终位于：
 | `providers.<name>.base_url` | string | ✓ | API 端点地址（合法 URL） |
 | `providers.<name>.auth_key` | string | ✓ | 认证密钥（明文存储，用户自行保护文件权限） |
 | `providers.<name>.model` | string | ✓ | 默认模型名称 |
-| `providers.<name>.agent_types` | list[string] | ✗ | 该 provider 的 `base_url` 适配的 engine 列表；用于防止 workitem 选中与当前 engine 不兼容的 provider。缺省 / 字段缺失时回退到所有已注册 engine（`list_engines()`） |
+| `providers.<name>.agent_types` | list[string] | ✗ | 该 provider 的 `base_url` 适配的 engine 列表；用于防止 workitem 选中与当前 engine 不兼容的 provider。缺省 / 字段缺失时回退到所有已注册 engine（`list_engines()`）。**特殊值** `all` 是 CLI 层的 alias，表示"兼容所有 engine"（与字段缺失等价），不会原样写入 JSON |
 | `default` | string | ✗ | 默认 Provider 名称，引用 `providers` 中的 key |
 
 ### Provider 命名规则
@@ -280,6 +280,23 @@ Model name: claude-sonnet-4-6
 === 添加成功 ===
 ```
 
+**Agent types 交互式 prompt**（在 `--agent-type` 未指定时出现）：
+
+```text
+Agent types:
+  1) all（兼容所有 engine）
+  2) claude-code
+  3) opencode
+请选择（逗号分隔多个，回车默认 1）: _
+```
+
+接受的输入：
+
+- 留空 / `1` → 兼容所有 engine（与不指定等价）
+- `2` / `3` / `2,3` → 限定具体子集
+- `all`（编号 1）与具体 engine 混用 → 拒绝（语义模糊）
+- 编号超出范围 / 非数字 → 拒绝并提示
+
 ### 非交互模式
 
 所有字段均可通过 CLI 参数传入（适合脚本化）：
@@ -298,6 +315,14 @@ yzrws model provider add \
   --auth-key company-token \
   --model gpt-4o \
   --agent-type opencode
+
+# 显式声明兼容所有 engine（与不传 --agent-type 等价；补全里可发现）
+yzrws model provider add \
+  --name anthropic-all \
+  --base-url https://api.anthropic.com \
+  --auth-key sk-ant-xxxxx \
+  --model claude-sonnet-4-6 \
+  --agent-type all
 ```
 
 ## 管理命令
@@ -376,7 +401,7 @@ yzrws model provider set-default <name>
 | --- | --- | --- |
 | `<name>` | remove / set-default 必须 | Provider 名称 |
 | `--name` / `--base-url` / `--auth-key` / `--model` | ✗ | add 子命令的非交互参数；缺省时进入交互式输入 |
-| `--agent-type` | ✗ | add 时指定 provider 兼容的 engine（可多次）；缺省时表示兼容所有已注册 engine |
+| `--agent-type` | ✗ | add 时指定 provider 兼容的 engine（可多次）；缺省或传值 `all` 时表示兼容所有已注册 engine。`all` 不能与具体 engine 混用 |
 | `--set-default` | ✗ | add 时强制将新 Provider 设为默认 |
 | `-y` / `--yes` | ✗ | add / remove 时跳过确认 |
 

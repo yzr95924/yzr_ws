@@ -2,11 +2,19 @@
 
 设计参考 doc/multi_agent_design.md §Claude Code 适配器 和 doc/session_design.md。
 
-Claude Code 通过 ANTHROPIC_* 环境变量配置：
-  - ANTHROPIC_BASE_URL   API 端点
-  - ANTHROPIC_AUTH_TOKEN 认证密钥
-  - ANTHROPIC_MODEL      模型名称
-yzrws 在 start / resume 时把 ResolvedModel 注入到这 3 个环境变量。
+Claude Code 的 API 连接参数优先级（从高到低）：
+  1. CLI 参数（仅 ``--model`` 是合法 CLI flag）
+  2. 项目级 ``<workitem>/.claude/settings.json`` 的 ``env`` 块
+  3. 用户级 ``~/.claude/settings.json`` 的 ``env`` 块
+  4. ``ANTHROPIC_*`` 环境变量
+
+⚠️  Claude CLI **没有** ``--base-url`` / ``--api-key`` CLI flag
+（实测 ``--base-url`` 报 ``unknown option``），所以这俩只能走
+settings.json 或 env——而 env 会被用户级 settings.json 的 env 块
+反超。yzrws 在 ``sync_rules`` 阶段把 ``env`` 块写入项目级
+settings.json，覆盖用户级同名 env，确保 base URL / auth token
+一定生效；model 则**同时**走 ``--model`` CLI flag（最高优先级）
++ settings.json env 双保险。
 """
 
 import os
@@ -33,13 +41,15 @@ class ClaudeCodeEngine(AgentEngine):
     ) -> int:
         """启动新的 Claude Code 会话。
 
-        在 workitem_dir 下执行 claude 命令（交互式 TUI），
-        继承父进程的 stdin/stdout/stderr 以支持交互。
+        先把 yzrws 解析的 model 写入项目级 ``.claude/settings.json``
+        （sync_rules），再执行 claude 命令（交互式 TUI），继承父进程
+        的 stdin/stdout/stderr 以支持交互。``--model`` CLI flag 同时显式追加。
         """
-        cmd = self._get_command()
+        self.sync_rules(workitem_dir, model=model)
+        cmd = self._get_command(model)
         env = self._build_env(model)
         result = subprocess.run(
-            [cmd],
+            cmd,
             cwd=workitem_dir,
             env=env,
             check=False,
@@ -55,12 +65,13 @@ class ClaudeCodeEngine(AgentEngine):
     ) -> int:
         """恢复指定会话。
 
-        执行 claude --resume <session_id>。
+        执行 claude --resume <session_id>。同样先 sync_rules，再 spawn。
         """
-        cmd = self._get_command()
+        self.sync_rules(workitem_dir, model=model)
+        cmd = self._get_command(model)
         env = self._build_env(model)
         result = subprocess.run(
-            [cmd, "--resume", session_id],
+            cmd + ["--resume", session_id],
             cwd=workitem_dir,
             env=env,
             check=False,
@@ -123,13 +134,56 @@ class ClaudeCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,  # noqa: ARG002
+        model: ResolvedModel | None = None,
     ) -> None:
-        """Claude Code 自动加载 CLAUDE.md，无需额外同步。
+        """同步 yzrws 解析的 base URL / auth token / model 到项目级
+        ``<workitem>/.claude/settings.json`` 的 env 块。
 
-        model 参数在本适配器中不直接使用——配置通过 ANTHROPIC_* 环境变量注入。
+        **Why not only env injection**（与早期设计对比）：
+        Claude Code 启动时按 user settings.json > env 的优先级解析
+        API 连接参数——仅 subprocess env 注入会被 ``~/.claude/settings.json``
+        的 env 块反超。所以 yzrws 把 env 写入**项目级** settings.json，
+        项目级 env 优先级**高于**用户级，确保 yzrws 解析结果一定生效。
+        （同时 ``--model`` CLI flag 也会传，但只覆盖 model 字段。）
+
+        **Why not overwrite unrelated fields**：
+        读取已有项目级 settings.json，仅 merge ``env`` 块；其他字段
+        （如用户自定义 ``permissions`` / ``cleanupPeriodDays`` 等）原样保留。
         """
-        # no-op
+        if model is None:
+            return
+        if not (model.base_url or model.auth_key or model.model):
+            return
+
+        import json
+
+        from yzrws.workspace import atomic_write_json
+
+        claude_dir = workitem_dir / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        settings_path = claude_dir / "settings.json"
+
+        # 读取已有配置，merge env 块（保留用户自定义字段）
+        config: dict = {}
+        if settings_path.is_file():
+            try:
+                config = json.loads(settings_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                config = {}
+
+        env_block = config.get("env")
+        if not isinstance(env_block, dict):
+            env_block = {}
+
+        if model.base_url:
+            env_block["ANTHROPIC_BASE_URL"] = model.base_url
+        if model.auth_key:
+            env_block["ANTHROPIC_AUTH_TOKEN"] = model.auth_key
+        if model.model:
+            env_block["ANTHROPIC_MODEL"] = model.model
+        config["env"] = env_block
+
+        atomic_write_json(settings_path, config)
 
     def sync_mcp(
         self,
@@ -155,8 +209,20 @@ class ClaudeCodeEngine(AgentEngine):
         payload = {"mcpServers": mcp_config}
         atomic_write_json(mcp_path, payload)
 
-    def _get_command(self) -> str:
-        return "claude"
+    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+        """构造 claude 命令行参数列表。
+
+        仅 ``--model`` 是合法的 Claude CLI flag（``--base-url`` /
+        ``--api-key`` 实测都是 ``unknown option``）。其它两个
+        API 连接参数（base URL / auth token）走 sync_rules 写
+        项目级 ``.claude/settings.json`` 的 env 块，详见
+        doc/multi_agent_design.md §Claude Code 适配器。
+
+        ``model.model`` 空时不追加 ``--model``，让 Claude CLI 走自己默认。
+        """
+        if model is not None and model.model:
+            return ["claude", "--model", model.model]
+        return ["claude"]
 
     def _build_env(self, model: ResolvedModel | None) -> dict[str, str]:
         """构造 subprocess 环境变量，把 ResolvedModel 注入到 ANTHROPIC_*。
