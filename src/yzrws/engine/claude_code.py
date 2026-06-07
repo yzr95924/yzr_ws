@@ -219,6 +219,7 @@ class ClaudeCodeEngine(AgentEngine):
         payload = {"mcpServers": mcp_config}
         atomic_write_json(mcp_path, payload)
 
+<<<<<<< HEAD
         # 同步 read-only 权限到 settings.local.json
         self._sync_outline_permissions(workitem_dir, read_only=read_only)
 
@@ -282,6 +283,8 @@ class ClaudeCodeEngine(AgentEngine):
         claude_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(settings_local_path, config)
 
+=======
+>>>>>>> 849d0ead78d8fa5d8e83d1f5bbe47dc4b5f0fa1f
     def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
         """构造 claude 命令行参数列表。
 
