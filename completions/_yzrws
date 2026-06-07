@@ -1,0 +1,335 @@
+#compdef yzrws
+# zsh completion for yzrws
+#
+# 支持顶层命令 + 二级 / 三级子命令（create workitem / model provider add / 等）
+# 的 Tab 补全。workitem 名、provider 名、引擎名等动态值在补全时实时从
+# workspace 目录与 provider.json 读取——无需 yzrws 自身暴露额外接口。
+#
+# 安装方式：将本文件放入 $fpath 路径下的任意目录，然后 `autoload -U _yzrws`
+# 即可（首次执行会自动补全）；或运行 scripts/install-completions.sh。
+
+# ==================================================================
+# 公共 helper
+# ==================================================================
+
+# 解析 workspace 路径，对齐 yzrws.paths.get_workspace_path()：
+# 优先 YZR_WORKSPACE（空串视为未设置），否则默认 ~/yzr_workspace。
+_yzrws_workspace_path() {
+    local raw="${YZR_WORKSPACE:-}"
+    if [[ -z "${raw// /}" ]]; then
+        raw="$HOME/yzr_workspace"
+    fi
+    raw="${raw/#\~/$HOME}"
+    raw="${raw%/}"
+    echo "$raw"
+}
+
+# 列出 workspace 下所有工作项目录名。
+_yzrws_workitems() {
+    local ws=$(_yzrws_workspace_path)
+    [[ -d "$ws" ]] || return 0
+    local name
+    # 不含 .config 等隐藏目录——与 workitem 命名规则对齐
+    for name in $(LC_ALL=C command ls -1 "$ws" 2>/dev/null); do
+        [[ -d "$ws/$name" ]] && echo "$name"
+    done
+}
+
+# 列出 workspace provider.json 中已配置的 Provider 名称。
+_yzrws_providers() {
+    local ws=$(_yzrws_workspace_path)
+    local provider_json="$ws/.config/provider.json"
+    [[ -r "$provider_json" ]] || return 0
+    python3 - "$provider_json" 2>/dev/null <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
+    providers = data.get("providers", {})
+    if isinstance(providers, dict):
+        for name in providers:
+            print(name)
+except (OSError, ValueError):
+    sys.exit(0)
+PYEOF
+}
+
+# 已注册的 engine 列表（与 src/yzrws/engine/__init__.py 保持一致）。
+_yzrws_engines() {
+    echo claude-code
+    echo opencode
+}
+
+# ==================================================================
+# 子命令定义：zsh 用 _describe 给出 "name:description" 列表
+# ==================================================================
+
+_yzrws_commands() {
+    local -a cmds
+    cmds=(
+        'init:初始化 workspace 目录结构'
+        'create:创建工作项等资源'
+        'list:列举所有工作项及其元数据'
+        'start:打开工作项并启动 Agent 会话'
+        'model:管理模型与 Provider 配置'
+        'workitem:管理 workitem 级别配置'
+        'outline:管理 Outline Wiki MCP 配置'
+    )
+    _describe 'command' cmds
+}
+
+# ==================================================================
+# 二级子命令定义
+# ==================================================================
+
+_yzrws_create_subcmds() {
+    local -a subs
+    subs=(
+        'workitem:创建一个新的工作项'
+    )
+    _describe 'subcommand' subs
+}
+
+_yzrws_model_subcmds() {
+    local -a subs
+    subs=(
+        'provider:管理模型 Provider'
+    )
+    _describe 'subcommand' subs
+}
+
+_yzrws_model_provider_subcmds() {
+    local -a subs
+    subs=(
+        'add:添加一个 Provider'
+        'list:列出已配置 Provider'
+        'remove:删除 Provider'
+        'set-default:切换默认 Provider'
+    )
+    _describe 'subcommand' subs
+}
+
+_yzrws_workitem_subcmds() {
+    local -a subs
+    subs=(
+        'set-model:把 workitem 绑定到某个 Provider'
+        'unset-model:解除 workitem 的 Provider 绑定'
+        'show:展示 workitem 完整配置与生效模型'
+        'set-outline:为 workitem 启用 Outline MCP'
+        'unset-outline:解除 workitem 的 Outline MCP 引用'
+    )
+    _describe 'subcommand' subs
+}
+
+_yzrws_outline_subcmds() {
+    local -a subs
+    subs=(
+        'add:添加 Outline Wiki 连接配置'
+        'show:展示当前 Outline 配置'
+        'update:更新 Outline 配置'
+        'remove:删除 Outline 配置'
+    )
+    _describe 'subcommand' subs
+}
+
+# ==================================================================
+# 叶子节点 options 定义
+# ==================================================================
+
+# yzrws create workitem <name> [--engine <e>] [--start]
+_yzrws_create_workitem() {
+    _arguments -s \
+        '1:workitem name:' \
+        '--engine[指定 Agent 引擎（覆盖全局默认）]:engine:_yzrws_engines' \
+        '--start[创建完成后自动执行 yzrws start]'
+}
+
+# yzrws start <name> [--engine <e>] [--new]
+_yzrws_start() {
+    _arguments -s \
+        '1:workitem name:_yzrws_workitems' \
+        '(--engine -e)'{--engine,-e}'[指定引擎（创建或切换时使用）]:engine:_yzrws_engines' \
+        '--new[强制启动新会话（不恢复历史）]'
+}
+
+# yzrws model provider add
+_yzrws_model_provider_add() {
+    _arguments -s \
+        '--name[Provider 名称（可省略以进入交互式输入）]:name:' \
+        '--base-url[API 端点 URL]:url:' \
+        '--auth-key[认证密钥]:key:' \
+        '--model[默认模型名称]:model:' \
+        '*--agent-type[该 provider 兼容的 engine]:agent-type:_yzrws_engines' \
+        '--set-default[强制将新 Provider 设为默认]' \
+        '(--yes -y)'{--yes,-y}'[同名 Provider 存在时跳过确认直接覆盖]'
+}
+
+# yzrws model provider remove <name> [-y]
+_yzrws_model_provider_remove() {
+    _arguments -s \
+        '1:provider name:_yzrws_providers' \
+        '(--yes -y)'{--yes,-y}'[跳过确认直接删除]'
+}
+
+# yzrws model provider set-default <name>
+_yzrws_model_provider_set_default() {
+    _arguments -s \
+        '1:provider name:_yzrws_providers'
+}
+
+# yzrws model provider list
+_yzrws_model_provider_list() {
+    _arguments -s
+}
+
+# yzrws model provider  →  三级 dispatch
+_yzrws_model_provider() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->subcmd' \
+        '*:: :->args'
+    case $state in
+        subcmd)
+            _yzrws_model_provider_subcmds
+            ;;
+        args)
+            case $words[1] in
+                add) _yzrws_model_provider_add ;;
+                list) _yzrws_model_provider_list ;;
+                remove) _yzrws_model_provider_remove ;;
+                set-default) _yzrws_model_provider_set_default ;;
+            esac
+            ;;
+    esac
+}
+
+# yzrws workitem set-model <name> --provider <name>
+_yzrws_workitem_set_model() {
+    _arguments -s \
+        '1:workitem name:_yzrws_workitems' \
+        '--provider[Provider 名称（必须已配置）]:provider:_yzrws_providers'
+}
+
+# yzrws workitem {unset-model|show|set-outline|unset-outline} <name>
+_yzrws_workitem_with_name() {
+    _arguments -s \
+        '1:workitem name:_yzrws_workitems'
+}
+
+# yzrws workitem → 二级 dispatch
+_yzrws_workitem() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->subcmd' \
+        '*:: :->args'
+    case $state in
+        subcmd)
+            _yzrws_workitem_subcmds
+            ;;
+        args)
+            case $words[1] in
+                set-model) _yzrws_workitem_set_model ;;
+                unset-model|show|set-outline|unset-outline) _yzrws_workitem_with_name ;;
+            esac
+            ;;
+    esac
+}
+
+# yzrws outline add
+_yzrws_outline_add() {
+    _arguments -s \
+        '--endpoint[Outline 实例 URL]:url:' \
+        '--auth-token[Outline API key]:token:' \
+        '(--yes -y)'{--yes,-y}'[跳过确认提示]'
+}
+
+# yzrws outline show
+_yzrws_outline_show() {
+    _arguments -s
+}
+
+# yzrws outline update
+_yzrws_outline_update() {
+    _arguments -s \
+        '--endpoint[新的 Outline 实例 URL]:url:' \
+        '--auth-token[新的 Outline API key]:token:' \
+        '(--yes -y)'{--yes,-y}'[跳过确认提示]'
+}
+
+# yzrws outline remove
+_yzrws_outline_remove() {
+    _arguments -s \
+        '(--yes -y)'{--yes,-y}'[跳过确认提示]'
+}
+
+# yzrws outline → 二级 dispatch
+_yzrws_outline() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->subcmd' \
+        '*:: :->args'
+    case $state in
+        subcmd)
+            _yzrws_outline_subcmds
+            ;;
+        args)
+            case $words[1] in
+                add) _yzrws_outline_add ;;
+                show) _yzrws_outline_show ;;
+                update) _yzrws_outline_update ;;
+                remove) _yzrws_outline_remove ;;
+            esac
+            ;;
+    esac
+}
+
+# yzrws create → 二级 dispatch
+_yzrws_create() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->subcmd' \
+        '*:: :->args'
+    case $state in
+        subcmd)
+            _yzrws_create_subcmds
+            ;;
+        args)
+            case $words[1] in
+                workitem) _yzrws_create_workitem ;;
+            esac
+            ;;
+    esac
+}
+
+# yzrws init / yzrws list  无子命令、无 flag
+_yzrws_no_subcmd() {
+    _arguments -s
+}
+
+# ==================================================================
+# 主入口
+# ==================================================================
+
+_yzrws() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->cmd' \
+        '*:: :->args'
+    case $state in
+        cmd)
+            _yzrws_commands
+            ;;
+        args)
+            case $words[1] in
+                init|list) _yzrws_no_subcmd ;;
+                create) _yzrws_create ;;
+                start) _yzrws_start ;;
+                model) _yzrws_model ;;
+                workitem) _yzrws_workitem ;;
+                outline) _yzrws_outline ;;
+            esac
+            ;;
+    esac
+}
+
+_yzrws "$@"

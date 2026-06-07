@@ -144,6 +144,39 @@ yzrws workitem unset-model <name>
 yzrws workitem show <name>
 ```
 
+## Shell 补全
+
+`completions/` 下提供了 bash / zsh / fish 三套补全脚本，覆盖所有子命令与 flag，
+并能在补全时从 `YZR_WORKSPACE`（默认 `~/yzr_workspace`）下实时读取工作项与
+Provider 名称，无需 yzrws 自身暴露额外接口。
+
+```sh
+# 一键安装到默认目录（按 $SHELL 自动选择）
+./scripts/install-completions.sh
+
+# 或一次性为所有 shell 安装
+./scripts/install-completions.sh --shell all
+
+# 卸载
+./scripts/install-completions.sh --uninstall
+```
+
+安装路径：
+
+| Shell | 目标位置 | 激活方式 |
+| --- | --- | --- |
+| bash | `~/.local/share/bash-completion/completions/yzrws` | 重启 shell 即可（依赖 bash-completion 2.x） |
+| zsh | `~/.zsh/completions/_yzrws` | 需在 `~/.zshrc` 中加入 `fpath=(~/.zsh/completions $fpath)` 与 `autoload -U compinit && compinit` |
+| fish | `~/.config/fish/completions/yzrws.fish` | fish 启动时自动加载 |
+
+补全时支持以下动态值：
+
+- `start` / `workitem *` 的工作项名：扫描 `YZR_WORKSPACE` 下的子目录
+- `model provider {remove,set-default}` 与 `workitem set-model --provider` 的 Provider
+  名：解析 `<workspace>/.config/provider.json` 的 `providers` 键
+- `--engine` / `--agent-type` 的 engine 名：与 `src/yzrws/engine/__init__.py`
+  静态注册表保持一致（`claude-code` / `opencode`）
+
 ## 其他详细设计
 
 具体设计逻辑参考 `./doc` 目录：

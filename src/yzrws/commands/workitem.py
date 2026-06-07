@@ -20,6 +20,7 @@ from yzrws.commands._name import is_valid_workitem_name
 from yzrws.commands._workspace_check import is_workspace_initialized
 from yzrws.output import (
     STATUS_ERROR,
+    print_banner,
     print_failure,
     print_provider_incompatible_for_engine,
     print_provider_not_found_for_set_model,
@@ -108,6 +109,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     show_p.add_argument("name", help="工作项名称")
     show_p.set_defaults(func=run_show)
+
+    # ---- workitem set-outline ----
+    set_outline_p = subparsers.add_parser(
+        "set-outline",
+        help="为 workitem 启用 Outline MCP（引用 workspace 的 default endpoint）",
+    )
+    set_outline_p.add_argument("name", help="工作项名称")
+    set_outline_p.set_defaults(func=run_set_outline)
+
+    # ---- workitem unset-outline ----
+    unset_outline_p = subparsers.add_parser(
+        "unset-outline",
+        help="解除 workitem 的 Outline MCP 引用",
+    )
+    unset_outline_p.add_argument("name", help="工作项名称")
+    unset_outline_p.set_defaults(func=run_unset_outline)
 
     return parser
 
@@ -305,10 +322,13 @@ def run_show(args: argparse.Namespace) -> int:
     # Section 2: setting.json（原始）
     raw_provider = setting.get("provider")
     raw_provider_display = str(raw_provider) if raw_provider else "（未设置）"
+    raw_outline = setting.get("outline")
+    raw_outline_display = str(raw_outline) if raw_outline else "（未设置）"
     setting_rows: list[tuple[str, str]] = [
         ("engine", str(setting.get("engine", "—"))),
         ("model", str(setting.get("model", "—"))),
         ("provider", raw_provider_display),
+        ("outline", raw_outline_display),
     ]
     print_workitem_show_section("setting.json（原始）", setting_rows)
 
@@ -330,6 +350,92 @@ def run_show(args: argparse.Namespace) -> int:
     ]
     print_workitem_show_section("生效配置（回退链结果）", resolved_rows)
 
+    return 0
+
+
+# ==================================================================
+# yzrws workitem set-outline
+# ==================================================================
+
+
+def run_set_outline(args: argparse.Namespace) -> int:
+    """实现 `yzrws workitem set-outline <name>`。
+
+    把 setting.json.outline 设为 "default"。不读取 outline.json
+    （避免在 outline.json 不存在时报错阻塞），启动时再统一解析。
+    """
+    workspace_path = paths.get_workspace_path()
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return 1
+
+    name = args.name
+    target = _resolve_workitem_dir(workspace_path, name)
+    if target is None:
+        print_workitem_not_found(name, workspace_path)
+        return 1
+
+    setting = _read_setting(target)
+    if setting is None:
+        print(f"[{STATUS_ERROR}] 读取 {target / 'setting.json'} 失败")
+        return 1
+
+    # 写入 setting.json
+    setting["outline"] = "default"
+    atomic_write_json(target / "setting.json", setting)
+
+    print_banner("设置 Workitem Outline 引用")
+    print()
+    print(f"工作项：{name}")
+    print("引用名称：default")
+    print()
+    print("  [设置] setting.json.outline = 'default'")
+    print()
+    print(f"下次 yzrws start {name} 将自动加载 Outline MCP。")
+    print()
+    print("=== 设置成功 ===")
+    return 0
+
+
+# ==================================================================
+# yzrws workitem unset-outline
+# ==================================================================
+
+
+def run_unset_outline(args: argparse.Namespace) -> int:
+    """实现 `yzrws workitem unset-outline <name>`。
+
+    把 outline 字段从 setting.json 中移除（语义同 null）。
+    """
+    workspace_path = paths.get_workspace_path()
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return 1
+
+    name = args.name
+    target = _resolve_workitem_dir(workspace_path, name)
+    if target is None:
+        print_workitem_not_found(name, workspace_path)
+        return 1
+
+    setting = _read_setting(target)
+    if setting is None:
+        print(f"[{STATUS_ERROR}] 读取 {target / 'setting.json'} 失败")
+        return 1
+
+    # 从 JSON 中移除 outline 字段
+    setting.pop("outline", None)
+    atomic_write_json(target / "setting.json", setting)
+
+    print_banner("清除 Workitem Outline 引用")
+    print()
+    print(f"工作项：{name}")
+    print()
+    print("  [清除] setting.json.outline = null")
+    print()
+    print(f"下次 yzrws start {name} 不再加载 Outline MCP。")
+    print()
+    print("=== 清除成功 ===")
     return 0
 
 

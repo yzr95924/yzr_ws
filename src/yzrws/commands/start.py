@@ -31,6 +31,7 @@ from yzrws.output import (
     print_workspace_not_initialized,
     print_workitem_name_invalid,
 )
+from yzrws.outline import resolve_mcp_config
 from yzrws.provider import (
     ProviderConfigError,
     get_workspace_provider_path,
@@ -180,6 +181,9 @@ def run(args: argparse.Namespace) -> int:
         )
         print()
 
+    # 3.6 解析 Outline MCP 配置（按 outline_wiki_design.md §解析逻辑）
+    mcp_config = resolve_mcp_config(setting, workspace_path)
+
     # 4. 获取引擎适配器
     try:
         engine = get_engine(engine_name)
@@ -201,6 +205,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"检测到引擎切换：{current_session.engine} → {engine_name}")
         archive_path = archive_session(target, current_session)
         print(f"已归档旧 session 到：{archive_path.relative_to(workspace_path)}")
+        # 清理旧引擎的 MCP 桥接文件
+        try:
+            old_engine = get_engine(current_session.engine)
+            old_engine.sync_mcp(target, None)
+        except ValueError:
+            pass  # 旧引擎不可用，跳过清理
         current_session = None
 
     # 7. 确定是否恢复会话
@@ -222,6 +232,9 @@ def run(args: argparse.Namespace) -> int:
                     session_to_resume = history
                     print(f"发现历史 {engine_name} 会话：{history.session_id}")
 
+    # 7.5 同步 MCP 配置到引擎原生位置
+    engine.sync_mcp(target, mcp_config)
+
     # 8. 启动引擎
     print_banner("启动会话")
     print()
@@ -230,6 +243,8 @@ def run(args: argparse.Namespace) -> int:
     print(f"引擎：{engine_name}")
     if resolved_model.source != "none":
         print(f"模型：{resolved_model.model}（来自 {resolved_model.provider_name}）")
+    if mcp_config:
+        print("Outline MCP：已启用")
     print()
 
     if session_to_resume:

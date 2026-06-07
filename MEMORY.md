@@ -26,6 +26,18 @@
   **How to apply:** 新增 Python 模块时放到 `src/yzrws/` 对应子包；新增 Python
   开发工具（lint 钩子 / 迁移脚本等）放到 `src/devtools/`。
 
+- 项目自定义 skill 集中存放在 `./skills/`（git submodule，
+  远端 `git@github.com:yzr95924/my_SKILL.git`）；新增 / 调整 skill 后
+  在 `.claude/skills/<name>` 下建软链接（指向 `../../skills/<name>`），
+  把 skill 注册到 agent。
+  **Why:** skill 实现集中到独立仓库便于跨项目复用与版本管理；
+  软链接让 `./skills/` 成为 single source of truth，避免在不同位置
+  重复实现 / 漂移。
+  **How to apply:** 写 / 改 skill 时直接改 `./skills/<name>/SKILL.md`
+  （以及同目录下的附属文件如 `template.md`），并保证 `.claude/skills/`
+  下有对应的软链接；CLAUDE.md / README.md / 其他文档需要引用 skill 时
+  用 `@./skills/<name>/SKILL.md` 形式。
+
 ### feedback
 
 - 脚本实现尽量功能归一，避免相同功能产生多个脚本。

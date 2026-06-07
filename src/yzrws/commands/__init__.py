@@ -20,3 +20,4 @@ from . import list as _list  # noqa: E402, F401
 from . import start as _start  # noqa: E402, F401
 from . import model as _model  # noqa: E402, F401
 from . import workitem as _workitem  # noqa: E402, F401
+from . import outline as _outline  # noqa: E402, F401

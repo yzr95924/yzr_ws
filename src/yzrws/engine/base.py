@@ -98,6 +98,23 @@ class AgentEngine(ABC):
             model: 按回退链解析后的最终模型配置
         """
 
+    @abstractmethod
+    def sync_mcp(
+        self,
+        workitem_dir: Path,
+        mcp_config: dict | None,
+    ) -> None:
+        """把 MCP 配置写入引擎原生的 MCP 配置位置。
+
+        设计参考 doc/outline_wiki_design.md §引擎适配。
+
+        Args:
+            workitem_dir: 工作项目录
+            mcp_config: MCP server 配置字典，格式为
+                ``{"<server-name>": {"type": "...", "url": "...", "headers": {...}}}``;
+                传入 None 时表示"清理所有 yzrws 注入的 MCP 配置"
+        """
+
     def is_available(self) -> bool:
         """检查引擎是否可用（命令是否存在于 PATH）。
 

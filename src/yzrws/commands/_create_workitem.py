@@ -163,6 +163,7 @@ def write_initial_files(
         "engine": engine,
         "model": None,
         "provider": None,
+        "outline": None,
         "env": {},
     }
     atomic_write_json(target / "setting.json", setting_data)

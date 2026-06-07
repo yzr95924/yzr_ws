@@ -202,5 +202,53 @@ class OpenCodeEngine(AgentEngine):
         # 原子写入
         atomic_write_json(config_path, config)
 
+    def sync_mcp(
+        self,
+        workitem_dir: Path,
+        mcp_config: dict | None,
+    ) -> None:
+        """把 MCP 配置合并到 opencode.json 的 ``mcp`` 字段。
+
+        mcp_config 非 None 时：读取现有 opencode.json，把每个 server entry
+        的 type 从 ``http`` 映射为 ``remote``（OpenCode 约定），写入 ``mcp``
+        字段，原子写回。
+        mcp_config 为 None 时：从 opencode.json 移除 ``mcp.outline`` 字段
+        （保留用户自定义的其他 MCP 配置）。
+        """
+        config_path = workitem_dir / _OPENCODE_CONFIG
+
+        # 读取现有配置
+        config: dict = {}
+        if config_path.is_file():
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                config = {}
+
+        if mcp_config is None:
+            # 清理模式：移除 mcp.outline
+            mcp_block = config.get("mcp")
+            if isinstance(mcp_block, dict) and "outline" in mcp_block:
+                del mcp_block["outline"]
+                if not mcp_block:
+                    # mcp 字段为空，整体移除
+                    config.pop("mcp", None)
+                else:
+                    config["mcp"] = mcp_block
+        else:
+            # 写入模式：合并 mcp 字段（type: http → remote）
+            mcp_block = config.get("mcp")
+            if not isinstance(mcp_block, dict):
+                mcp_block = {}
+            for server_name, server_cfg in mcp_config.items():
+                translated = dict(server_cfg)
+                if translated.get("type") == "http":
+                    translated["type"] = "remote"
+                mcp_block[server_name] = translated
+            config["mcp"] = mcp_block
+
+        # 原子写回
+        atomic_write_json(config_path, config)
+
     def _get_command(self) -> str:
         return "opencode"

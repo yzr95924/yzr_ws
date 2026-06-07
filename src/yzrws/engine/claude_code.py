@@ -131,6 +131,30 @@ class ClaudeCodeEngine(AgentEngine):
         """
         # no-op
 
+    def sync_mcp(
+        self,
+        workitem_dir: Path,
+        mcp_config: dict | None,
+    ) -> None:
+        """把 MCP 配置写入 <workitem>/.mcp.json。
+
+        mcp_config 非 None 时：原子写入 ``{"mcpServers": mcp_config}``。
+        mcp_config 为 None 时：删除 .mcp.json（若存在），避免遗留敏感 token。
+        """
+        mcp_path = workitem_dir / ".mcp.json"
+
+        if mcp_config is None:
+            # 清理模式：删除桥接文件
+            if mcp_path.is_file():
+                mcp_path.unlink()
+            return
+
+        # 写入模式：原子写
+        from yzrws.workspace import atomic_write_json
+
+        payload = {"mcpServers": mcp_config}
+        atomic_write_json(mcp_path, payload)
+
     def _get_command(self) -> str:
         return "claude"
 
