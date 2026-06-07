@@ -254,11 +254,19 @@ uninstall.sh ──exec──> install-completions.sh --shell <target> --dest-di
 ```text
 --prefix <dir>        # 安装根（默认 $HOME/.local），bin 目录 = <prefix>/bin
 --bin-dir <dir>       # 直接指定 bin 目录，覆盖 --prefix 推导
---shell <bash|zsh|fish|all|none>  # 补全目标 shell，缺省按 $SHELL 推断
---no-completions      # 等价于 --shell none
+--shell <bash|zsh|fish>  # 仅装 / 卸某种 shell 的补全；缺省装 / 卸全部三种
+--no-completions      # 仅装 / 卸主命令，跳过补全（与 --shell 互斥）
 --dest-base <dir>     # 补全根目录（透传给 install-completions.sh，默认 $HOME）
 -h / --help           # 打印脚本头注释
 ```
+
+**Why 缺省装全部：**
+
+- yzrws 用户通常不止用一种 shell（bash 启动脚本 + 日常 fish / 切到 zsh
+  调试都很常见），缺省装全部避免"切到另一种 shell 发现没补全"的尴尬
+- 不再做 `$SHELL` 推断——`$SHELL` 反映的是当前 shell 进程，不是用户的
+  shell 偏好；推断有歧义，统一装全部更稳
+- install 与 uninstall 对称：装了就卸全，卸了就卸全，状态闭环
 
 **Why 对称：**
 
@@ -266,6 +274,13 @@ uninstall.sh ──exec──> install-completions.sh --shell <target> --dest-di
 - uninstall 必须能定位 install 留下的所有痕迹，否则会出现"卸了主命令但
   补全还在"或"卸了 bash 补全但 zsh 补全还在"的碎片化状态
 - 文档 / README 中 install 与 uninstall 可以共用同一组示例，减小维护成本
+
+**Why `--shell` 不再接受 `all` / `none`：**
+
+- `all` 已成为默认行为，传 `--shell all` 反而冗余
+- `none` 等价于 `--no-completions`，两个写法同时存在会逼用户记忆哪个对哪个
+- 内部转发到 `install-completions.sh` 时，缺省时显式拼 `--shell all`；
+  外部 API 越简单越好
 
 ### 幂等性与安全兜底
 
@@ -285,10 +300,12 @@ uninstall.sh ──exec──> install-completions.sh --shell <target> --dest-di
 ```text
 [1/2] 解析参数（--prefix / --bin-dir / --shell / --no-completions / --dest-base）
         └─ 缺省值：prefix=$HOME/.local，bin_dir=$prefix/bin，
-                    shell=$(basename $SHELL)，dest_base=$HOME
+                    dest_base=$HOME；--shell 缺省时装全部
         └─ 校验 SOURCE_BIN / COMPLETIONS_SCRIPT 存在且可执行
+        └─ 校验 --shell 取值（仅 bash/zsh/fish），--no-completions 与 --shell 互斥
 [2/2] 创建 <bin_dir>/yzrws → <repo>/bin/yzrws 软链接（幂等 + 安全检查）
-[3/3] 转发 install-completions.sh --shell <target> --dest-dir <dest_base>
+[3/3] 若未传 --no-completions：转发 install-completions.sh
+        --shell <${SHELL_TARGET:-all}> --dest-dir <dest_base>
 [4/4] 打印激活提示（PATH 不含 bin_dir 时给出临时 / 永久启用方案）
 ```
 
@@ -368,6 +385,24 @@ uninstall.sh ──exec──> install-completions.sh --shell <target> --dest-di
 > 本节刻意不展开每种 shell 补全的**具体**激活命令——这些已写在脚本的
 > "激活提示"段和 README.md "Shell 补全"一节；本文档只描述**为什么**要这样
 > 设计（不重复 WHAT）。
+
+### 防御性补全原则
+
+补全脚本的目标是**尽量消除可能的错误命令组合**——让用户按 Tab 永远拿不到
+一条最终会被 argparse 拒绝的命令路径。三种 shell 实现路径不同，但目标一致：
+
+| 错误组合 | 触发条件 | bash 处理 | fish 处理 | zsh 处理 |
+| --- | --- | --- | --- | --- |
+| **flag value 被误计为位置参数** | `yzrws start --engine claude-code <name>` | 主函数构建 `cmd_path` 时跳过 value-taking flag 后的 token（`_yzrws_value_taking_flags`） | flag 标记 `-r` 让 fish 自动不把 value 当位置参数 | `_arguments` 的 `'--engine[desc]:msg:action'` 语法内建处理 |
+| **leaf 节点后看不到剩余 flag** | `yzrws model provider add <Tab>`（cur 空、n=3、dispatch 返回空） | 兜底分支：COMPREPLY 空时再调一次 `_yzrws_complete_flags ""` | 每个 flag 独立的 `complete -c` 规则，cur 触发条件一致 | `_arguments` 的 `*` 通配剩余 flag |
+| **父级子命令被越级重提** | `yzrws model provider add <Tab>` 后又想补 `model` | cmd_path 仍含 `model`，但当前 case n=3 的位置参数 dispatch 不会去查 n=1 | `not __fish_seen_subcommand_from provider` 排除项 | `case $words[1]` 分发到 leaf，未知 case 落到默认空补全 |
+| **跨子命令污染** | `yzrws model --foo <Tab>` 之类的乱写 | `model` 在 cmd_path 位置 0；`--foo` 不在 flag 表，flag 补全返回空 | `model` 规则要求 `not __fish_seen_subcommand_from provider`，否则不触发 | `_yzrws_model` 走 `_arguments -C` 二级 state，未知值默认空 |
+| **多参"包含"被 OR 误命中浅层**（fish 特有） | `yzrws model <Tab>` 时 `__fish_seen_subcommand_from model provider` 因 OR 语义只匹配 `model` 就成立，错误地补出 add/list/remove/set-default | n/a | 多参包含条件必须用 `; and` 链式： `__fish_seen_subcommand_from A; and __fish_seen_subcommand_from B` | n/a（zsh 用 `_arguments` 的子状态机，不会有此问题） |
+| **同名单词既是顶层又是嵌套子命令**（fish 特有） | `yzrws create workitem <Tab>` 时 `__fish_seen_subcommand_from workitem` 命中（workitem 出现在命令行），导致 `yzrws workitem <subcmd>` 那 5 条规则错误触发，列出 set-model/show 等 | n/a（bash 用位置计数 `n=2` + case `create.workitem` 天然区分） | 顶层 `workitem <subcmd>` 规则必须加 `and not __fish_seen_subcommand_from create` 守卫 | n/a（zsh `_yzrws_create` / `_yzrws_workitem` 是两个独立 state，天然隔离） |
+
+> 三种 shell 都在 `completions/*.sh` 顶部加了对应的"防御性补全原则"注释，
+> 与本节表格对齐——这样后续修改任一 shell 补全时，能直接对照此表
+> 找出潜在漏洞并修复。
 
 ---
 

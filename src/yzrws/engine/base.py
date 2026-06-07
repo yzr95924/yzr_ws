@@ -88,9 +88,10 @@ class AgentEngine(ABC):
         *,
         model: ResolvedModel | None = None,
     ) -> None:
-        """将 CLAUDE.md 同步到引擎原生的规则格式。
+        """同步 yzrws 解析的模型配置到引擎原生位置。
 
-        Claude Code 自动加载 CLAUDE.md，此方法为空实现。
+        Claude Code 在此把 env 写入项目级 ``.claude/settings.json``，覆盖
+        用户级 settings.json 的同名 env 块（解决 base URL 被反超的问题）。
         OpenCode 需要生成 opencode.json 桥接配置，并可在此写入 model / provider 字段。
 
         Args:
@@ -103,16 +104,22 @@ class AgentEngine(ABC):
         self,
         workitem_dir: Path,
         mcp_config: dict | None,
+        *,
+        read_only: bool = False,
     ) -> None:
         """把 MCP 配置写入引擎原生的 MCP 配置位置。
 
-        设计参考 doc/outline_wiki_design.md §引擎适配。
+        设计参考 doc/outline_wiki_design.md §引擎适配 和 §只读模式。
 
         Args:
             workitem_dir: 工作项目录
             mcp_config: MCP server 配置字典，格式为
                 ``{"<server-name>": {"type": "...", "url": "...", "headers": {...}}}``;
                 传入 None 时表示"清理所有 yzrws 注入的 MCP 配置"
+            read_only: 启用后阻止 Outline MCP 的写操作工具
+                （create_document / update_document / archive_document /
+                create_comment）；引擎通过自身权限机制（如 Claude Code 的
+                permissions.deny）实现。mcp_config 为 None 时忽略此参数。
         """
 
     def is_available(self) -> bool:
@@ -123,9 +130,15 @@ class AgentEngine(ABC):
         """
         import shutil
 
-        cmd = self._get_command()
+        cmd = self._get_command()[0]
         return shutil.which(cmd) is not None
 
     @abstractmethod
-    def _get_command(self) -> str:
-        """返回引擎的可执行命令名（如 "claude" / "opencode"）。"""
+    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+        """返回引擎的可执行命令及其参数（如 ``["claude"]`` 或
+        ``["claude", "--model", "qwen3.7-max"]``）。
+
+        引擎可在此追加命令行参数，让 yzrws 显式覆盖引擎原生配置中的 model
+        等关键字段——env 注入可能被用户 / 项目级 settings.json 反超，
+        但 CLI 参数的优先级最高。
+        """

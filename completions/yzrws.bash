@@ -5,6 +5,17 @@
 # 与 provider.json 实时读取，无需 yzrws 自身暴露额外接口。
 #
 # 安装方式见 scripts/install-completions.sh，或参考 README.md "Shell 补全" 一节。
+#
+# 防御性补全原则（与 doc/script_design.md "install-completions.sh" 节对齐）：
+#   - 命令路径 cmd_path 剔除所有 flag 与 flag value，避免误把 flag 值当
+#     位置参数（典型反例：yzrws start --engine claude-code 把 claude-code
+#     误计为二级子命令）
+#   - 位置参数层无结果时自动兜底到 flag 名补全（典型反例：yzrws model
+#     provider add <Tab> 时 cur 是空，dispatch 返回空，用户看不到 --name
+#     等剩余 flag）
+#   - 整条命令深度 >= 4 时不再补全（防越界误补）
+#   - 已在某层填过子命令后，相同层的其他子命令不再被补全
+#     （__fish_seen_subcommand_from 的 bash 等价：通过位置计数隐式实现）
 
 # ==================================================================
 # 公共 helper
@@ -67,6 +78,30 @@ _yzrws_engines() {
     printf '%s\n' claude-code opencode
 }
 
+# --agent-type 候选值：在 engine 列表基础上加特殊值 "all"（兼容所有 engine）
+_yzrws_agent_type_values() {
+    printf '%s\n' all claude-code opencode
+}
+
+# 列出所有"后接值"的 flag。位置参数解析阶段会跳过这些 flag 后面的 token，
+# 避免把"yzrws start --engine claude-code <name>"误认成
+# "yzrws <start> <claude-code> <name>"（导致 dispatch 走错分支）。
+#
+# 与 argparse 中带 nargs=1 / nargs='?' 的 flag 保持一致；新增 value-taking
+# flag 时务必同步本函数。
+_yzrws_value_taking_flags() {
+    printf '%s\n' \
+        --engine -e \
+        --agent-type \
+        --provider \
+        --name \
+        --base-url \
+        --auth-key \
+        --model \
+        --endpoint \
+        --auth-token
+}
+
 # ==================================================================
 # flag 补全：按当前已确定的位置参数生成对应子命令的 flag 列表
 # ==================================================================
@@ -84,7 +119,7 @@ _yzrws_complete_flags() {
                 init) flags="-h --help" ;;
                 list) flags="-h --help" ;;
                 create) flags="-h --help" ;;
-                start) flags="-h --help --engine -e --new" ;;
+                start) flags="-h --help --engine -e" ;;
                 model) flags="-h --help" ;;
                 workitem) flags="-h --help" ;;
                 outline) flags="-h --help" ;;
@@ -97,15 +132,23 @@ _yzrws_complete_flags() {
                 workitem.set-model) flags="-h --help --provider" ;;
                 workitem.unset-model) flags="-h --help" ;;
                 workitem.show) flags="-h --help" ;;
-                workitem.set-outline) flags="-h --help" ;;
+                workitem.set-outline) flags="-h --help --read-only" ;;
                 workitem.unset-outline) flags="-h --help" ;;
+                workitem.unset-outline-readonly) flags="-h --help" ;;
                 outline.add) flags="-h --help --endpoint --auth-token -y --yes" ;;
                 outline.show) flags="-h --help" ;;
                 outline.update) flags="-h --help --endpoint --auth-token -y --yes" ;;
                 outline.remove) flags="-h --help -y --yes" ;;
+                # yzrws start <workitem>  -- 位置参数已填，但用户仍可能想
+                # 加 --engine 等 flag。start.* 兜住这类场景。
+                start.*) flags="-h --help --engine -e" ;;
             esac
             ;;
-        3)
+        3|4)
+            # n=3：yzrws model provider <add|list|remove|set-default> 阶段
+            # n=4：<上述子命令> 后面已填了位置参数（如 provider 名），
+            #       仍允许看到剩余 flag（-y / --help 等）
+            # 同一个 case 表同时覆盖两种深度，避免重复维护
             case "${positional[0]}.${positional[1]}.${positional[2]}" in
                 model.provider.add)
                     flags="-h --help --name --base-url --auth-key --model --agent-type --set-default -y --yes"
@@ -114,6 +157,15 @@ _yzrws_complete_flags() {
                 model.provider.remove) flags="-h --help -y --yes" ;;
                 model.provider.set-default) flags="-h --help" ;;
             esac
+            # 兜底：若 3 元素不匹配，回退到 2 元素前缀。
+            # 处理 "create workitem <name>" 已填名字后想看 --start 的场景：
+            # 此时 positional = (create, workitem, <name>)，3 元素不命中任何
+            # 具体子命令，但 2 元素前缀 "create.workitem" 是合法模式。
+            if [[ -z "$flags" && "${#positional[@]}" -ge 2 ]]; then
+                case "${positional[0]}.${positional[1]}" in
+                    create.workitem) flags="-h --help --engine --start" ;;
+                esac
+            fi
             ;;
     esac
 
@@ -143,7 +195,7 @@ _yzrws_dispatch_1() {
             COMPREPLY=( $(compgen -W "provider" -- "$cur") )
             ;;
         workitem)
-            COMPREPLY=( $(compgen -W "set-model unset-model show set-outline unset-outline" -- "$cur") )
+            COMPREPLY=( $(compgen -W "set-model unset-model show set-outline unset-outline unset-outline-readonly" -- "$cur") )
             ;;
         outline)
             COMPREPLY=( $(compgen -W "add show update remove" -- "$cur") )
@@ -173,7 +225,8 @@ _yzrws_dispatch_2() {
         workitem.unset-model|\
         workitem.show|\
         workitem.set-outline|\
-        workitem.unset-outline)
+        workitem.unset-outline|\
+        workitem.unset-outline-readonly)
             COMPREPLY=( $(compgen -W "$(_yzrws_workitems)" -- "$cur") )
             ;;
 
@@ -211,7 +264,7 @@ _yzrws_handle_value_flags() {
             return 0
             ;;
         --agent-type)
-            COMPREPLY=( $(compgen -W "$(_yzrws_engines)" -- "$cur") )
+            COMPREPLY=( $(compgen -W "$(_yzrws_agent_type_values)" -- "$cur") )
             return 0
             ;;
         --provider)
@@ -225,7 +278,17 @@ _yzrws_handle_value_flags() {
 # ==================================================================
 # 主入口
 # ==================================================================
-
+#
+# 防御性补全策略：
+#   - cmd_path 仅收集"有意义的"位置参数（剔除 flag 与 flag value）
+#   - 若 cmd_path 在某深度已无位置参数可补，自动回退到 flag 名补全
+#   - 整条命令深度 >= 4 时不再补全（防越界误补）
+#
+# 这样能消除两类典型错误组合：
+#   1. value-taking flag 的值被误计为位置参数
+#      → yzrws start --engine claude-code 仍能正确补 <name>
+#   2. 已走到 leaf 节点后用户按 Tab 想看剩余 flag 时一片空白
+#      → yzrws model provider add <Tab> 能看到 --name / --base-url 等
 _yzrws() {
     local cur prev words cword
     # 兼容 bash-completion 缺失的环境（部分发行版默认未装）
@@ -239,37 +302,64 @@ _yzrws() {
         cword=$COMP_CWORD
     fi
 
-    # flag 后的值补全（仅当 cur 不是 - 开头）
-    if [[ "$cur" != -* ]]; then
-        if _yzrws_handle_value_flags "$prev" "$cur"; then
-            return
-        fi
-    fi
-
-    # 解析位置参数序列（去掉所有 flag）
-    local positional=()
-    local j
+    # ---- 收集"命令路径"：剔除所有 flag 及其值 ----
+    local -a cmd_path=()
+    local -a value_taking_flags=($(_yzrws_value_taking_flags))
+    local j tok skip_next=0 is_value_taker v
     for ((j = 1; j < cword; j++)); do
-        if [[ "${words[$j]}" != -* ]]; then
-            positional+=("${words[$j]}")
+        tok="${words[$j]}"
+        if ((skip_next)); then
+            skip_next=0
+            continue
+        fi
+        if [[ "$tok" == -* ]]; then
+            is_value_taker=0
+            for v in "${value_taking_flags[@]}"; do
+                if [[ "$tok" == "$v" ]]; then
+                    is_value_taker=1
+                    break
+                fi
+            done
+            if ((is_value_taker)); then
+                skip_next=1   # 下一个 token 是这个 flag 的值，不进 cmd_path
+            fi
+        else
+            cmd_path+=("$tok")
         fi
     done
-    local n=${#positional[@]}
+    local n=${#cmd_path[@]}
 
-    # flag 名补全
+    # ---- flag 名补全 ----
     if [[ "$cur" == -* ]]; then
-        _yzrws_complete_flags "$cur" "${positional[@]}"
+        _yzrws_complete_flags "$cur" "${cmd_path[@]}"
         return
     fi
 
-    # 位置参数补全
+    # ---- value-taking flag 后的值补全 ----
+    if _yzrws_handle_value_flags "$prev" "$cur"; then
+        return
+    fi
+
+    # ---- 位置参数补全 ----
     case "$n" in
         0) COMPREPLY=( $(compgen -W "init create list start model workitem outline" -- "$cur") ) ;;
-        1) _yzrws_dispatch_1 "${positional[0]}" "$cur" ;;
-        2) _yzrws_dispatch_2 "${positional[0]}" "${positional[1]}" "$cur" ;;
-        3) _yzrws_dispatch_3 "${positional[0]}" "${positional[1]}" "${positional[2]}" "$cur" ;;
+        1) _yzrws_dispatch_1 "${cmd_path[0]}" "$cur" ;;
+        2) _yzrws_dispatch_2 "${cmd_path[0]}" "${cmd_path[1]}" "$cur" ;;
+        3) _yzrws_dispatch_3 "${cmd_path[0]}" "${cmd_path[1]}" "${cmd_path[2]}" "$cur" ;;
         *) COMPREPLY=() ;;
     esac
+
+    # ---- 兜底：位置参数层无结果时回退到 flag 名补全 ----
+    #
+    # 典型场景：yzrws model provider add <Tab>（cur 空，n=3，
+    # _yzrws_dispatch_3 返回空，因为 add 没有位置参数）。
+    # 此时用户期望看到 --name / --base-url 等剩余 flag。
+    #
+    # 限制 n >= 2：n=0/1 时用户在选顶层 / 二级子命令，空结果意味着"无匹配"
+    # （很可能是 typo 或空 workspace），回退到 flag 反而误导——保持空。
+    if [[ ${#COMPREPLY[@]} -eq 0 && "$n" -ge 2 ]]; then
+        _yzrws_complete_flags "" "${cmd_path[@]}"
+    fi
 }
 
 complete -F _yzrws yzrws

@@ -7,6 +7,18 @@
 #
 # 安装方式：将本文件放入 $fpath 路径下的任意目录，然后 `autoload -U _yzrws`
 # 即可（首次执行会自动补全）；或运行 scripts/install-completions.sh。
+#
+# 防御性补全原则（与 doc/script_design.md "install-completions.sh" 节对齐）：
+#   - 顶层 _arguments -C 用 state 双阶段（cmd → args）：子命令之外的位置
+#     不再被错误地补全
+#   - 二级 / 三级函数用 _arguments 自带的 '1:value:action' 语法，
+#     flag value 由 :action 给出，不会和位置参数互相污染
+#   - 每个 leaf 函数独立声明 flag 集合（不在父级共享）——避免"父级接
+#     受的 flag 被子命令继承"这种越界组合
+#   - case $words[1] 分发到具体 leaf，unknown subcmd 落到默认空补全
+#   - value-taking flag 在 _arguments 同一行内用 "name[desc]:msg:action"
+#     形式声明，zsh 自动处理：yzrws start --engine e <name> 不会把
+#     "e" 误计为 workitem 名
 
 # ==================================================================
 # 公共 helper
@@ -56,6 +68,13 @@ PYEOF
 
 # 已注册的 engine 列表（与 src/yzrws/engine/__init__.py 保持一致）。
 _yzrws_engines() {
+    echo claude-code
+    echo opencode
+}
+
+# --agent-type 候选值：在 engine 列表基础上加特殊值 "all"（兼容所有 engine）
+_yzrws_agent_type_values() {
+    echo all
     echo claude-code
     echo opencode
 }
@@ -144,12 +163,11 @@ _yzrws_create_workitem() {
         '--start[创建完成后自动执行 yzrws start]'
 }
 
-# yzrws start <name> [--engine <e>] [--new]
+# yzrws start <name> [--engine <e>]
 _yzrws_start() {
     _arguments -s \
         '1:workitem name:_yzrws_workitems' \
-        '(--engine -e)'{--engine,-e}'[指定引擎（创建或切换时使用）]:engine:_yzrws_engines' \
-        '--new[强制启动新会话（不恢复历史）]'
+        '(--engine -e)'{--engine,-e}'[指定引擎（创建或切换时使用）]:engine:_yzrws_engines'
 }
 
 # yzrws model provider add
@@ -159,7 +177,7 @@ _yzrws_model_provider_add() {
         '--base-url[API 端点 URL]:url:' \
         '--auth-key[认证密钥]:key:' \
         '--model[默认模型名称]:model:' \
-        '*--agent-type[该 provider 兼容的 engine]:agent-type:_yzrws_engines' \
+        '*--agent-type[该 provider 兼容的 engine（"all" 表示全部）]:agent-type:_yzrws_agent_type_values' \
         '--set-default[强制将新 Provider 设为默认]' \
         '(--yes -y)'{--yes,-y}'[同名 Provider 存在时跳过确认直接覆盖]'
 }

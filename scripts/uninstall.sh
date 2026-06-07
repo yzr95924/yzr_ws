@@ -8,10 +8,10 @@
 # 两者都设计为幂等：未发现目标时静默跳过，重复运行安全。
 #
 # 用法：
-#   ./scripts/uninstall.sh                        # 卸载默认位置（~/.local/bin）下的内容
+#   ./scripts/uninstall.sh                        # 卸载主命令 + 全部补全（默认）
 #   ./scripts/uninstall.sh --prefix /opt/yzrws    # 卸载其他 prefix 下的内容
 #   ./scripts/uninstall.sh --bin-dir ~/.local/bin # 仅指定 bin 目录
-#   ./scripts/uninstall.sh --shell all            # 同时卸载所有 shell 的补全
+#   ./scripts/uninstall.sh --shell bash           # 只卸某种 shell 的补全（bash|zsh|fish）
 #   ./scripts/uninstall.sh --no-completions       # 仅卸载主命令，保留补全
 #   ./scripts/uninstall.sh --dest-base /tmp/...   # 测试场景：补全装在 /tmp/... 时也能定位
 
@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,17p' "$0"
+            sed -n '2,15p' "$0"
             exit 0
             ;;
         *)
@@ -69,6 +69,14 @@ if [[ -z "$DEST_BASE" ]]; then
     echo "错误：--dest-base 不能为空" >&2
     exit 2
 fi
+if [[ -n "$SHELL_TARGET" ]] && [[ "$SHELL_TARGET" != "bash" && "$SHELL_TARGET" != "zsh" && "$SHELL_TARGET" != "fish" ]]; then
+    echo "错误：--shell 只接受 bash / zsh / fish（默认卸全部，省略此参数）" >&2
+    exit 2
+fi
+if [[ "$NO_COMPLETIONS" == "true" && -n "$SHELL_TARGET" ]]; then
+    echo "错误：--no-completions 与 --shell 互斥" >&2
+    exit 2
+fi
 
 # 由 --prefix 推导默认 --bin-dir
 if [[ -z "$BIN_DIR" ]]; then
@@ -77,11 +85,6 @@ fi
 if [[ -z "$BIN_DIR" ]]; then
     echo "错误：无法确定 bin 目录" >&2
     exit 2
-fi
-
-# 推断默认 shell（仅在用户既未指定 --shell 也未传 --no-completions 时使用）
-if [[ "$NO_COMPLETIONS" == "false" && -z "$SHELL_TARGET" ]]; then
-    SHELL_TARGET=$(basename "${SHELL:-/bin/bash}")
 fi
 
 # ==================================================================
@@ -121,15 +124,17 @@ fi
 # ==================================================================
 
 echo ""
-if [[ "$NO_COMPLETIONS" == "true" || "$SHELL_TARGET" == "none" ]]; then
-    echo "[2/2] 跳过补全卸载（--no-completions / --shell none）"
+if [[ "$NO_COMPLETIONS" == "true" ]]; then
+    echo "[2/2] 跳过补全卸载（--no-completions）"
 elif [[ ! -x "$COMPLETIONS_SCRIPT" ]]; then
     echo "[2/2] 跳过补全卸载：缺少 $COMPLETIONS_SCRIPT"
 else
-    echo "[2/2] 卸载 shell 补全（shell=$SHELL_TARGET, dest-base=$DEST_BASE）..."
+    # 缺省（SHELL_TARGET 空）：转发 --shell all，卸 bash + zsh + fish
+    # 显式指定 SHELL_TARGET：仅卸该 shell 的补全
+    effective_target="${SHELL_TARGET:-all}"
+    echo "[2/2] 卸载 shell 补全（shell=$effective_target, dest-base=$DEST_BASE）..."
     echo ""
-    # shellcheck disable=SC2086
-    "$COMPLETIONS_SCRIPT" --shell "$SHELL_TARGET" --dest-dir "$DEST_BASE" --uninstall
+    "$COMPLETIONS_SCRIPT" --shell "$effective_target" --dest-dir "$DEST_BASE" --uninstall
 fi
 
 echo ""

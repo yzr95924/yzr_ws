@@ -132,6 +132,7 @@ Outline 实例（自托管域名变更）。
 | 首次配置 | `outline add` | API key 隐藏、URL 规范化、引导生成 key | §配置文件 Schema / §添加命令 |
 | 工作项引用 | `set-outline` / setting.json `outline="default"` | 引擎适配、原子写入、降级行为 | §引擎适配 / §启动集成 |
 | 不引用 | `outline: null` / 字段缺失 | null 语义、不存在的引用名处理 | §引用语义 / §启动集成 |
+| 只读模式 | `set-outline --read-only` / `outline_read_only: true` | 权限 deny 条目管理、合并策略 | §只读模式 / §启动集成 |
 | 更新配置 | `outline update` | 至少一个字段、二次确认 | §更新命令 |
 | 删除配置 | `outline remove` | 引用扫描、幂等 | §删除命令 |
 | 引擎切换 | `start --engine` 切换 | 旧桥接文件清理 | §引擎适配 / §启动集成 |
@@ -246,6 +247,8 @@ yzrws 不提供 Outline MCP 集成，用户自己编辑
   "provider": null,             // 现有字段，未变化
   "outline": "default",         // 新增：引用 workspace outline endpoint 的名称
                                 // null / 字段缺失 = 不启用 Outline MCP
+  "outline_read_only": true,    // 新增：Outline MCP 只读开关
+                                // true = 阻止写操作；false / 字段缺失 = 读写
   "env": {}                     // 现有字段，未变化
 }
 ```
@@ -265,6 +268,140 @@ yzrws 不提供 Outline MCP 集成，用户自己编辑
 `outline` 字段在概念上对齐 `provider` 字段，但**没有回退链**——
 不存在"workspace default"或"引擎内置默认"。`outline: null`
 直接表示"不启用"，不会向上层查找。
+
+## 只读模式
+
+### 场景
+
+某些工作项需要检索 Outline 知识库但**不应修改**远端文档
+（例如纯研究型任务、审计型任务、或面向外包协作者的受限工作项）。
+只读模式通过引擎的权限机制阻止 Outline MCP 的写操作工具，
+仅保留搜索与读取能力。
+
+### setting.json 字段
+
+```jsonc
+// <workitem>/setting.json
+{
+  "outline": "default",
+  "outline_read_only": true   // true = 只读；false / 字段缺失 = 读写
+}
+```
+
+| 取值 | 含义 |
+| --- | --- |
+| `true` | 阻止写操作工具（create / update / archive / comment） |
+| `false` / 字段缺失 | 读写模式（默认行为，所有 MCP 工具可用） |
+
+> `outline_read_only` 仅在 `outline` 字段已启用时有意义。
+> `outline` 为 `null` 时，`outline_read_only` 被忽略。
+
+### 写工具 deny 列表
+
+只读模式下被阻止的 Outline MCP 工具（定义在 `src/yzrws/outline.py`
+的 `OUTLINE_WRITE_TOOLS` 常量中）：
+
+| 工具名 | 被阻止的操作 |
+| --- | --- |
+| `create_document` | 创建新文档 |
+| `update_document` | 修改文档标题或正文 |
+| `archive_document` | 归档（删除）文档 |
+| `create_comment` | 在文档下发表评论 |
+
+以下工具**不受限制**（只读模式下仍可用）：
+
+| 工具名 | 操作 |
+| --- | --- |
+| `search_documents` | 全文搜索 |
+| `list_collections` | 列出 Collection |
+| `get_collection_structure` | 获取文档树 |
+| `get_document` / `read_document` | 读取文档 |
+| `list_document_comments` | 列出评论 |
+
+### 权限执行机制（Claude Code）
+
+Claude Code 通过 `<workitem>/.claude/settings.local.json` 的
+`permissions.deny` 数组控制 MCP 工具的可用性。
+yzrws 在 `sync_mcp()` 阶段自动管理 deny 条目：
+
+```jsonc
+// <workitem>/.claude/settings.local.json（只读模式下由 yzrws 写入）
+{
+  "permissions": {
+    "deny": [
+      "mcp__outline__create_document",
+      "mcp__outline__update_document",
+      "mcp__outline__archive_document",
+      "mcp__outline__create_comment"
+    ]
+  }
+}
+```
+
+**合并策略**（"外科手术式"）：
+yzrws 仅增删上述 4 个已知 deny 条目，不触碰用户在
+`settings.local.json` 中自定义的其他权限（allow / deny 均原样保留）。
+当 `read_only` 关闭时，仅移除这 4 个条目，不清除其他 deny 规则。
+
+### OpenCode 限制
+
+OpenCode 暂无已知的工具级权限机制，`read_only` 参数当前为 no-op。
+待 OpenCode 支持权限控制后补充实现。
+
+### 命令集
+
+```text
+yzrws workitem set-outline <name> --read-only    # 启用 Outline + 只读模式
+yzrws workitem set-outline <name>                 # 启用 Outline + 读写模式
+yzrws workitem unset-outline-readonly <name>      # 仅关闭只读（保留引用）
+yzrws workitem unset-outline <name>               # 清除引用 + 只读模式
+```
+
+- `set-outline` 不带 `--read-only` 时，`outline_read_only` 设为 `false`
+  （幂等：重复执行 `set-outline` 不带 flag 会关闭只读模式）
+- `unset-outline` 同时清除 `outline` 和 `outline_read_only`
+- `unset-outline-readonly` 仅清除 `outline_read_only`，保留 `outline` 引用
+
+### 输出示例
+
+`set-outline --read-only` 成功：
+
+```text
+=== 设置 Workitem Outline 引用 ===
+
+工作项：my-task
+引用名称：default
+模式：只读
+
+  [设置] setting.json.outline = 'default'
+  [设置] setting.json.outline_read_only = true
+
+下次 yzrws start my-task 将自动加载 Outline MCP（只读）。
+
+=== 设置成功 ===
+```
+
+`unset-outline-readonly` 成功：
+
+```text
+=== 清除 Workitem Outline 只读模式 ===
+
+工作项：my-task
+
+  [清除] setting.json.outline_read_only = false
+
+Outline MCP 引用保持不变（'default'），下次 yzrws start 将以读写模式加载。
+
+=== 清除成功 ===
+```
+
+`yzrws start` 输出（只读模式）：
+
+```text
+工作项：my-task
+引擎：claude-code
+Outline MCP：已启用（只读）
+```
 
 ## 引擎适配
 
@@ -305,6 +442,8 @@ class AgentEngine(ABC):
         self,
         workitem_dir: Path,
         mcp_config: dict | None,
+        *,
+        read_only: bool = False,
     ) -> None:
         """把 MCP 配置写入引擎原生的 MCP 配置位置。
 
@@ -313,6 +452,8 @@ class AgentEngine(ABC):
             mcp_config: MCP server 配置字典，格式为
                 ``{"<server-name>": {"type": "...", "url": "...", "headers": {...}}}``;
                 传入 None 时表示"清理所有 yzrws 注入的 MCP 配置"
+            read_only: 启用后阻止 Outline MCP 的写操作工具
+                （详见 §只读模式）
         """
 ```
 
@@ -418,9 +559,11 @@ yzrws start <workitem_name>
   │
   ├── 1. 读取 <workitem>/setting.json，确定引擎
   ├── 2. 读取 <workitem>/session.json（如果有）
-  ├── 3. 解析 mcp_config（见 §解析逻辑）
+  ├── 3. 解析 mcp_config（见 §解析逻辑）+ outline_read_only
   ├── 4. 调用对应适配器的 sync_rules()
-  ├── 5. 调用对应适配器的 sync_mcp(workitem_dir, mcp_config)
+  ├── 5. 调用对应适配器的 sync_mcp(workitem_dir, mcp_config,
+  │       read_only=outline_read_only)
+  │       └── Claude Code：同时管理 settings.local.json 的 deny 条目
   ├── 6. 引擎切换清理（如有）
   ├── 7. 调用 start() 或 resume()
   └── 8. 会话结束后，调用 save_session()
@@ -549,35 +692,60 @@ yzrws outline remove
     yzrws workitem unset-outline doc-refactor
 ```
 
-### yzrws workitem set-outline / unset-outline
+### yzrws workitem set-outline / unset-outline / unset-outline-readonly
 
 ```text
-yzrws workitem set-outline <name>     # 绑定到默认 endpoint
-yzrws workitem unset-outline <name>   # 解绑（setting.json.outline = null）
+yzrws workitem set-outline <name> [--read-only]   # 绑定到默认 endpoint
+yzrws workitem unset-outline <name>                # 解绑 + 清除只读模式
+yzrws workitem unset-outline-readonly <name>       # 仅关闭只读（保留引用）
 ```
 
-`set-outline` 仅做轻量写入——把 `setting.json.outline` 设为 `"default"`。
-不读取 outline.json（避免在 outline.json 不存在时报错阻塞）。
+`set-outline` 做两件事：把 `setting.json.outline` 设为 `"default"`，
+同时按 `--read-only` flag 设置 `outline_read_only`（不传 flag 则为
+`false`）。不读取 outline.json（避免在 outline.json 不存在时报错阻塞），
 启动时再统一解析。
 
-`unset-outline` 把 `outline` 字段从 JSON 中移除（语义同 `null`）。
+`unset-outline` 把 `outline` 和 `outline_read_only` 字段一并移除
+（语义同 `null` + `false`）。
+
+`unset-outline-readonly` 仅移除 `outline_read_only`，保留 `outline`
+引用——适用于"先只读探索，后切换为读写"的场景。
 
 与 `set-model` 的差异：`set-outline` 不涉及兼容性检查
 （Outline MCP 是引擎中性的，claude-code 与 opencode 都能消费）。
 
 ### 输出示例
 
-`set-outline` 成功：
+`set-outline` 成功（不带 `--read-only`）：
 
 ```text
 === 设置 Workitem Outline 引用 ===
 
 工作项：my-task
 引用名称：default
+模式：读写
 
   [设置] setting.json.outline = 'default'
+  [设置] setting.json.outline_read_only = false
 
-下次 yzrws start my-task 将自动加载 Outline MCP。
+下次 yzrws start my-task 将自动加载 Outline MCP（读写）。
+
+=== 设置成功 ===
+```
+
+`set-outline --read-only` 成功：
+
+```text
+=== 设置 Workitem Outline 引用 ===
+
+工作项：my-task
+引用名称：default
+模式：只读
+
+  [设置] setting.json.outline = 'default'
+  [设置] setting.json.outline_read_only = true
+
+下次 yzrws start my-task 将自动加载 Outline MCP（只读）。
 
 === 设置成功 ===
 ```
@@ -592,6 +760,20 @@ yzrws workitem unset-outline <name>   # 解绑（setting.json.outline = null）
   [清除] setting.json.outline = null
 
 下次 yzrws start my-task 不再加载 Outline MCP。
+
+=== 清除成功 ===
+```
+
+`unset-outline-readonly` 成功：
+
+```text
+=== 清除 Workitem Outline 只读模式 ===
+
+工作项：my-task
+
+  [清除] setting.json.outline_read_only = false
+
+Outline MCP 引用保持不变（'default'），下次 yzrws start 将以读写模式加载。
 
 === 清除成功 ===
 ```
@@ -632,19 +814,20 @@ yzrws workitem unset-outline <name>   # 解绑（setting.json.outline = null）
 
 | 文件 | 说明 | 纳入版本控制 |
 | --- | --- | --- |
-| `src/yzrws/outline.py` | Outline 配置管理业务逻辑 | ✓ |
+| `src/yzrws/outline.py` | Outline 配置管理业务逻辑 + `OUTLINE_WRITE_TOOLS` 常量 | ✓ |
 | `src/yzrws/commands/outline.py` | `outline` 4 个子命令 handler | ✓ |
-| `src/yzrws/commands/workitem.py` | `set-outline` / `unset-outline` handler（与 `set-model` 同模块） | ✓ |
-| `src/yzrws/engine/base.py` | 抽象基类新增 `sync_mcp()` 方法签名 | ✓ |
-| `src/yzrws/engine/claude_code.py` | `sync_mcp()` 实现：原子写 `<workitem>/.mcp.json` | ✓ |
-| `src/yzrws/engine/opencode.py` | `sync_mcp()` 实现：合并 `opencode.json` 的 `mcp.outline` 字段 | ✓ |
+| `src/yzrws/commands/workitem.py` | `set-outline` / `unset-outline` / `unset-outline-readonly` handler | ✓ |
+| `src/yzrws/engine/base.py` | 抽象基类 `sync_mcp()` 方法签名（含 `read_only` 参数） | ✓ |
+| `src/yzrws/engine/claude_code.py` | `sync_mcp()` 实现 + `_sync_outline_permissions()` 权限管理 | ✓ |
+| `src/yzrws/engine/opencode.py` | `sync_mcp()` 实现（`read_only` 当前 no-op） | ✓ |
 | `<workspace>/.config/outline.json` | workspace 级 Outline 配置（含 API key） | ✗（建议 .gitignore） |
 | `<workitem>/.mcp.json` | Claude Code MCP 桥接文件 | ✗（建议 .gitignore） |
+| `<workitem>/.claude/settings.local.json` | Claude Code 项目级本地设置（含 Outline deny 条目） | ✗（gitignore 约定） |
 | `<workitem>/opencode.json` | OpenCode 桥接文件（`instructions` + `mcp`） | ✗（已有约定） |
 
 > 包含 API key 的文件（`outline.json` / `.mcp.json`）均不纳入版本控制；
 > 建议用户在 workspace 根目录的 `.gitignore` 中加入：
-> `.config/outline.json` 与 `*/.mcp.json`。
+> `.config/outline.json`、`*/.mcp.json` 与 `*/.claude/settings.local.json`。
 > `opencode.json` 沿用 [`multi_agent_design.md`](./multi_agent_design.md) 的
 > "不纳入 git" 约定。
 

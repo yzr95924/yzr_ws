@@ -20,6 +20,7 @@ from yzrws.commands._name import is_valid_workitem_name
 from yzrws.commands._workspace_check import is_workspace_initialized
 from yzrws.output import (
     STATUS_ERROR,
+    STATUS_WARN,
     print_banner,
     print_failure,
     print_provider_incompatible_for_engine,
@@ -116,15 +117,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="为 workitem 启用 Outline MCP（引用 workspace 的 default endpoint）",
     )
     set_outline_p.add_argument("name", help="工作项名称")
+    set_outline_p.add_argument(
+        "--read-only",
+        action="store_true",
+        default=False,
+        help="启用只读模式（阻止 Outline MCP 的写操作工具）",
+    )
     set_outline_p.set_defaults(func=run_set_outline)
 
     # ---- workitem unset-outline ----
     unset_outline_p = subparsers.add_parser(
         "unset-outline",
-        help="解除 workitem 的 Outline MCP 引用",
+        help="解除 workitem 的 Outline MCP 引用（同时清除只读模式）",
     )
     unset_outline_p.add_argument("name", help="工作项名称")
     unset_outline_p.set_defaults(func=run_unset_outline)
+
+    # ---- workitem unset-outline-readonly ----
+    unset_ro_p = subparsers.add_parser(
+        "unset-outline-readonly",
+        help="关闭 workitem 的 Outline 只读模式（保留 Outline MCP 引用）",
+    )
+    unset_ro_p.add_argument("name", help="工作项名称")
+    unset_ro_p.set_defaults(func=run_unset_outline_readonly)
 
     return parser
 
@@ -324,11 +339,14 @@ def run_show(args: argparse.Namespace) -> int:
     raw_provider_display = str(raw_provider) if raw_provider else "（未设置）"
     raw_outline = setting.get("outline")
     raw_outline_display = str(raw_outline) if raw_outline else "（未设置）"
+    raw_read_only = setting.get("outline_read_only", False)
+    raw_read_only_display = "true（只读）" if raw_read_only else "false（读写）"
     setting_rows: list[tuple[str, str]] = [
         ("engine", str(setting.get("engine", "—"))),
         ("model", str(setting.get("model", "—"))),
         ("provider", raw_provider_display),
         ("outline", raw_outline_display),
+        ("outline_read_only", raw_read_only_display),
     ]
     print_workitem_show_section("setting.json（原始）", setting_rows)
 
@@ -359,9 +377,10 @@ def run_show(args: argparse.Namespace) -> int:
 
 
 def run_set_outline(args: argparse.Namespace) -> int:
-    """实现 `yzrws workitem set-outline <name>`。
+    """实现 `yzrws workitem set-outline <name> [--read-only]`。
 
-    把 setting.json.outline 设为 "default"。不读取 outline.json
+    把 setting.json.outline 设为 "default"，同时按 ``--read-only``
+    flag 设置 outline_read_only 字段。不读取 outline.json
     （避免在 outline.json 不存在时报错阻塞），启动时再统一解析。
     """
     workspace_path = paths.get_workspace_path()
@@ -380,18 +399,25 @@ def run_set_outline(args: argparse.Namespace) -> int:
         print(f"[{STATUS_ERROR}] 读取 {target / 'setting.json'} 失败")
         return 1
 
+    read_only = getattr(args, "read_only", False)
+
     # 写入 setting.json
     setting["outline"] = "default"
+    setting["outline_read_only"] = read_only
     atomic_write_json(target / "setting.json", setting)
+
+    mode_label = "只读" if read_only else "读写"
 
     print_banner("设置 Workitem Outline 引用")
     print()
     print(f"工作项：{name}")
     print("引用名称：default")
+    print(f"模式：{mode_label}")
     print()
     print("  [设置] setting.json.outline = 'default'")
+    print(f"  [设置] setting.json.outline_read_only = {str(read_only).lower()}")
     print()
-    print(f"下次 yzrws start {name} 将自动加载 Outline MCP。")
+    print(f"下次 yzrws start {name} 将自动加载 Outline MCP（{mode_label}）。")
     print()
     print("=== 设置成功 ===")
     return 0
@@ -405,7 +431,8 @@ def run_set_outline(args: argparse.Namespace) -> int:
 def run_unset_outline(args: argparse.Namespace) -> int:
     """实现 `yzrws workitem unset-outline <name>`。
 
-    把 outline 字段从 setting.json 中移除（语义同 null）。
+    把 outline 字段与 outline_read_only 字段从 setting.json 中移除
+    （语义同 null）。
     """
     workspace_path = paths.get_workspace_path()
     if not is_workspace_initialized(workspace_path):
@@ -423,7 +450,8 @@ def run_unset_outline(args: argparse.Namespace) -> int:
         print(f"[{STATUS_ERROR}] 读取 {target / 'setting.json'} 失败")
         return 1
 
-    # 从 JSON 中移除 outline 字段
+    # 从 JSON 中移除 outline 和 outline_read_only 字段
+    had_read_only = setting.pop("outline_read_only", None)
     setting.pop("outline", None)
     atomic_write_json(target / "setting.json", setting)
 
@@ -432,8 +460,63 @@ def run_unset_outline(args: argparse.Namespace) -> int:
     print(f"工作项：{name}")
     print()
     print("  [清除] setting.json.outline = null")
+    if had_read_only:
+        print("  [清除] setting.json.outline_read_only（已同步清除只读模式）")
     print()
     print(f"下次 yzrws start {name} 不再加载 Outline MCP。")
+    print()
+    print("=== 清除成功 ===")
+    return 0
+
+
+# ==================================================================
+# yzrws workitem unset-outline-readonly
+# ==================================================================
+
+
+def run_unset_outline_readonly(args: argparse.Namespace) -> int:
+    """实现 `yzrws workitem unset-outline-readonly <name>`。
+
+    仅清除 outline_read_only 字段，保留 outline 引用。
+    """
+    workspace_path = paths.get_workspace_path()
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return 1
+
+    name = args.name
+    target = _resolve_workitem_dir(workspace_path, name)
+    if target is None:
+        print_workitem_not_found(name, workspace_path)
+        return 1
+
+    setting = _read_setting(target)
+    if setting is None:
+        print(f"[{STATUS_ERROR}] 读取 {target / 'setting.json'} 失败")
+        return 1
+
+    # 检查 outline 是否已启用
+    outline_ref = setting.get("outline")
+    if not outline_ref:
+        print(
+            f"[{STATUS_WARN}] workitem {name!r} 未启用 Outline MCP，只读模式无实际效果"
+        )
+
+    # 移除 outline_read_only 字段
+    setting.pop("outline_read_only", None)
+    atomic_write_json(target / "setting.json", setting)
+
+    print_banner("清除 Workitem Outline 只读模式")
+    print()
+    print(f"工作项：{name}")
+    print()
+    print("  [清除] setting.json.outline_read_only = false")
+    print()
+    if outline_ref:
+        print(
+            f"Outline MCP 引用保持不变（{outline_ref!r}），"
+            "下次 yzrws start 将以读写模式加载。"
+        )
     print()
     print("=== 清除成功 ===")
     return 0

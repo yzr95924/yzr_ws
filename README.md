@@ -64,20 +64,20 @@ README.md               # 项目说明
 `scripts/install.sh` 会把 `bin/yzrws` 软链接到 `~/.local/bin/yzrws`（XDG 标准
 用户级可执行目录，常见发行版默认已在 `PATH` 中），同时调用
 `scripts/install-completions.sh` 把 `completions/` 下的 bash / zsh / fish
-补全装到对应 shell 的标准目录。
+补全装到对应 shell 的标准目录。**默认装全部三种 shell 补全**——一次到位，
+省去切 shell 时再装的麻烦。
 
 ```sh
 git clone git@github.com:yzr95924/yzr_ws.git
 cd yzr_ws
 
-# 一键安装：yzrws → ~/.local/bin/yzrws，补全按 $SHELL 自动安装
+# 一键安装：yzrws → ~/.local/bin/yzrws + bash/zsh/fish 全部补全
 ./scripts/install.sh
 
-# 也可以指定 prefix / bin 目录 / 目标 shell
+# 也可以指定 prefix / bin 目录 / 单选某种 shell
 ./scripts/install.sh --prefix /opt/yzrws
 ./scripts/install.sh --bin-dir ~/.local/bin
-./scripts/install.sh --shell all        # 为 bash / zsh / fish 全装
-./scripts/install.sh --shell bash       # 显式指定
+./scripts/install.sh --shell bash       # 只装 bash 补全（bash|zsh|fish）
 ./scripts/install.sh --no-completions   # 只装主命令
 
 # 验证
@@ -95,12 +95,12 @@ yzrws --help
 `install-completions.sh --uninstall` 移除补全；两者均设计为幂等，重复运行安全。
 
 ```sh
-./scripts/uninstall.sh                       # 卸载默认位置（~/.local/bin）
+./scripts/uninstall.sh                       # 卸载默认位置（~/.local/bin）+ 全部补全
 
 # 与 install.sh 保持镜像的参数
 ./scripts/uninstall.sh --prefix /opt/yzrws
 ./scripts/uninstall.sh --bin-dir ~/.local/bin
-./scripts/uninstall.sh --shell all
+./scripts/uninstall.sh --shell bash          # 只卸 bash 补全（bash|zsh|fish）
 ./scripts/uninstall.sh --no-completions      # 只卸主命令，保留补全
 ```
 
@@ -136,13 +136,19 @@ yzrws --help
 ```sh
 $> yzrws model provider add
 # 依次提示输入：Provider 名称、Base URL、Auth Key、Model name
+# Agent types（编号选择）：
+#   1) all（兼容所有 engine）
+#   2) claude-code
+#   3) opencode
+#   请选择（逗号分隔多个，回车默认 1）: _
 ```
 
 或者直接编辑 `<workspace>/.config/provider.json`。所有字段也可通过
 `--name` / `--base-url` / `--auth-key` / `--model` / `--agent-type`（可多次）参数传入
 以便脚本化。`--agent-type` 用于标注该 Provider 的 `base_url` 兼容的 engine
-（`claude-code` / `opencode`），缺省时兼容所有已注册 engine；workitem 选中不兼容
-的 Provider 时 `yzrws workitem set-model` 会报错。
+（`claude-code` / `opencode`），缺省或传特殊值 `all` 时兼容所有已注册
+engine（`all` 不能与具体 engine 混用）；workitem 选中不兼容的 Provider 时
+`yzrws workitem set-model` 会报错。
 
 ### 给 workitem 绑定 Provider
 
@@ -164,7 +170,7 @@ yzrws init
 # 创建 / 列举 / 打开工作项
 yzrws create workitem <name> [--engine <engine>] [--start]
 yzrws list
-yzrws start <name> [--engine <engine>] [--new]
+yzrws start <name> [--engine <engine>]
 
 # 管理 Provider（workspace 级 .config/provider.json）
 yzrws model provider add [--name <name> --base-url <url> --auth-key <key> --model <model>] [--agent-type <engine>]... [--set-default] [-y]
@@ -209,7 +215,8 @@ Provider 名称，无需 yzrws 自身暴露额外接口。
 - `model provider {remove,set-default}` 与 `workitem set-model --provider` 的 Provider
   名：解析 `<workspace>/.config/provider.json` 的 `providers` 键
 - `--engine` / `--agent-type` 的 engine 名：与 `src/yzrws/engine/__init__.py`
-  静态注册表保持一致（`claude-code` / `opencode`）
+  静态注册表保持一致（`claude-code` / `opencode`）；`--agent-type` 还接受
+  特殊值 `all`（与缺省等价）
 
 ## 其他详细设计
 

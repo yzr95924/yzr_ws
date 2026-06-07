@@ -95,7 +95,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "该 provider 兼容的 engine 类型（可多次指定，如 "
             "--agent-type claude-code --agent-type opencode）；"
-            "缺省时表示兼容所有已注册 engine"
+            "特殊值 'all' 表示兼容所有 engine（与不传此参数等价）；"
+            "'all' 不能与具体 engine 混用"
         ),
     )
     add_p.add_argument(

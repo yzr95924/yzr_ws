@@ -164,6 +164,7 @@ def write_initial_files(
         "model": None,
         "provider": None,
         "outline": None,
+        "outline_read_only": False,
         "env": {},
     }
     atomic_write_json(target / "setting.json", setting_data)

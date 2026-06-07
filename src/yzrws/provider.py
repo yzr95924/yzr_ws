@@ -18,6 +18,11 @@ provider.json 的 schema：
     "default": "<name>"   // 可选
   }
 
+agent_types 的有效值：
+  - 任何已注册 engine（"claude-code" / "opencode" 等）
+  - 特殊值 "all"：显式声明兼容所有 engine，与不写 agent_types 字段等价
+  - "all" 不能与具体 engine 混用（语义模糊）
+
 关键不变量：
   - 写盘使用 atomic_write_json（tempfile + os.replace），写失败不留半截 JSON。
   - 读盘失败（JSON 损坏）抛 ProviderConfigError，由 caller 决定如何报告。
@@ -45,6 +50,10 @@ WORKSPACE_PROVIDER_REL = Path(".config/provider.json")
 
 # Provider 名称正则：小写字母 / 数字开头，可含连字符和下划线，长度 1-32
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+
+# agent_types 特殊值：显式声明兼容所有 engine
+# 与不写 agent_types 字段等价，但用户可显式选择（补全里可发现）
+AGENT_TYPE_ALL = "all"
 
 
 # ==================================================================
@@ -148,11 +157,19 @@ def is_valid_base_url(url: str) -> bool:
 
 
 def is_valid_agent_type(name: str, all_engine_names: list[str]) -> bool:
-    """校验 agent_type 名称是否在已注册 engine 列表中。
+    """校验 agent_type 名称是否合法。
 
-    `name` 必须非空且存在于 `all_engine_names`。
+    合法的 agent_type 名称可以是：
+      - 任一已注册 engine（`all_engine_names` 中的元素）
+      - 特殊值 `AGENT_TYPE_ALL`（"all"），显式声明兼容所有 engine
+
+    `name` 必须非空。
     """
-    return bool(name) and name in all_engine_names
+    if not name:
+        return False
+    if name == AGENT_TYPE_ALL:
+        return True
+    return name in all_engine_names
 
 
 # ==================================================================

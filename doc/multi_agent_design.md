@@ -68,28 +68,44 @@ class AgentEngine(ABC):
 class ClaudeCodeEngine(AgentEngine):
     name = "claude-code"
 
-    def start(self, workitem_dir):
-        # claude --print 在 workitem 目录下启动
-        # CLAUDE.md 会被自动加载，无需额外同步
-        ...
+    def start(self, workitem_dir, *, model=None):
+        cmd = self._get_command(model)         # 显式 --model / --base-url / --api-key
+        env = self._build_env(model)           # ANTHROPIC_* 三件套
+        subprocess.run(cmd, cwd=workitem_dir, env=env)
 
-    def resume(self, workitem_dir):
-        session_id = self._read_session_id(workitem_dir)
-        # claude --resume <session_id>
-        ...
+    def resume(self, workitem_dir, session_id, *, model=None):
+        cmd = self._get_command(model) + ["--resume", session_id]
+        env = self._build_env(model)
+        subprocess.run(cmd, cwd=workitem_dir, env=env)
 
-    def run(self, workitem_dir, prompt):
-        # claude -p "prompt" --output-format json
-        ...
-
-    def sync_rules(self, workitem_dir):
-        # Claude Code 自动加载 CLAUDE.md，无需额外操作
-        pass
-
-    def save_session_id(self, workitem_dir, session_id):
-        # 写入 workitem_dir/session_id
-        ...
+    def _get_command(self, model=None) -> list[str]:
+        # 把 model / base_url / auth_key 全部用 CLI 标志显式追加——
+        # CLI 参数优先级最高，覆盖 env 变量与 ~/.claude/settings.json 的同名配置
+        cmd = ["claude"]
+        if model is None:
+            return cmd
+        if model.model:
+            cmd += ["--model", model.model]
+        if model.base_url:
+            cmd += ["--base-url", model.base_url]
+        if model.auth_key:
+            cmd += ["--api-key", model.auth_key]
+        return cmd
 ```
+
+**关键不变量**：Claude Code 的 API 连接参数来源有 3 层
+（CLI 参数 > env > settings.json），yzrws **同时**在两层显式覆盖：
+
+- **env 注入**：`_build_env` 把 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` /
+  `ANTHROPIC_MODEL` 写到 subprocess 环境
+- **CLI 显式**：`_get_command` 把 `--base-url` / `--api-key` / `--model` 追加到
+  `claude` 的 argv
+
+仅 env 注入不够——`~/.claude/settings.json` 或项目级 `settings.json` 若
+显式写这些字段，会反超 env（用户已踩过此坑：Model 解析对了，但 base URL
+还是 settings.json 里的旧值）。CLI 参数优先级最高，**所有 3 个 API 连接
+参数都覆盖**才能保证 yzrws 的解析结果一定生效，**不依赖**用户 / 项目配置。
+字段为空时不追加对应 flag（避免给 Claude CLI 空串参数触发其解析错误）。
 
 ### OpenCode 适配器
 

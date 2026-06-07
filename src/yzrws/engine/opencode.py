@@ -37,13 +37,18 @@ class OpenCodeEngine(AgentEngine):
     ) -> int:
         """启动新的 OpenCode 会话。
 
-        先同步规则文件，然后在 workitem_dir 下执行 opencode 命令。
+        先同步规则文件（opencode.json 包含 model / provider 块），
+        然后在 workitem_dir 下执行 opencode 命令。
+
+        OpenCode 不接受 CLI 上的 model 标志（model 由 opencode.json
+        提供，yzrws 在 sync_rules 阶段写入），所以 _get_command 直接
+        返回 ``["opencode"]``。
         """
         self.sync_rules(workitem_dir, model=model)
 
-        cmd = self._get_command()
+        cmd = self._get_command(model)
         result = subprocess.run(
-            [cmd],
+            cmd,
             cwd=workitem_dir,
             check=False,
         )
@@ -62,9 +67,9 @@ class OpenCodeEngine(AgentEngine):
         """
         self.sync_rules(workitem_dir, model=model)
 
-        cmd = self._get_command()
+        cmd = self._get_command(model)
         result = subprocess.run(
-            [cmd, "run", "-s", session_id],
+            cmd + ["run", "-s", session_id],
             cwd=workitem_dir,
             check=False,
         )
@@ -81,7 +86,7 @@ class OpenCodeEngine(AgentEngine):
         cmd = self._get_command()
         try:
             result = subprocess.run(
-                [cmd, "session", "list", "--json"],
+                cmd + ["session", "list", "--json"],
                 cwd=workitem_dir,
                 capture_output=True,
                 text=True,
@@ -121,7 +126,7 @@ class OpenCodeEngine(AgentEngine):
         cmd = self._get_command()
         try:
             result = subprocess.run(
-                [cmd, "session", "list", "--json"],
+                cmd + ["session", "list", "--json"],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -206,6 +211,8 @@ class OpenCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         mcp_config: dict | None,
+        *,
+        read_only: bool = False,  # noqa: ARG002
     ) -> None:
         """把 MCP 配置合并到 opencode.json 的 ``mcp`` 字段。
 
@@ -214,6 +221,9 @@ class OpenCodeEngine(AgentEngine):
         字段，原子写回。
         mcp_config 为 None 时：从 opencode.json 移除 ``mcp.outline`` 字段
         （保留用户自定义的其他 MCP 配置）。
+
+        ``read_only`` 参数当前为 no-op：OpenCode 暂无已知的工具级权限机制，
+        无法阻止 MCP 写操作。待 OpenCode 支持权限控制后补充实现。
         """
         config_path = workitem_dir / _OPENCODE_CONFIG
 
@@ -250,5 +260,8 @@ class OpenCodeEngine(AgentEngine):
         # 原子写回
         atomic_write_json(config_path, config)
 
-    def _get_command(self) -> str:
-        return "opencode"
+    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+        """OpenCode 不接受 CLI model 标志（model 由 opencode.json 提供）；
+        为对齐抽象接口签名仍接受 ``model`` 参数但不使用。
+        """
+        return ["opencode"]

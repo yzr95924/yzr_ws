@@ -37,6 +37,16 @@ WORKSPACE_OUTLINE_REL = Path(".config/outline.json")
 # Workitem 唯一合法的引用名（单 endpoint 设计）
 DEFAULT_REF = "default"
 
+# Outline MCP 中执行写操作的工具名（用于 read-only 模式的 deny 列表）。
+# 引擎适配器在构造 deny 条目时拼接前缀：f"mcp__outline__{tool}"。
+# 工具名对齐 Outline MCP server 暴露的 tool name（不含 outline_ 前缀）。
+OUTLINE_WRITE_TOOLS = (
+    "create_document",
+    "update_document",
+    "archive_document",
+    "create_comment",
+)
+
 
 # ==================================================================
 # 异常
