@@ -61,17 +61,52 @@ README.md               # 项目说明
 
 ### 安装
 
-> TODO：`scripts/install.sh` 尚未实现，当前需手动将 `./bin` 加入 `PATH`。
+`scripts/install.sh` 会把 `bin/yzrws` 软链接到 `~/.local/bin/yzrws`（XDG 标准
+用户级可执行目录，常见发行版默认已在 `PATH` 中），同时调用
+`scripts/install-completions.sh` 把 `completions/` 下的 bash / zsh / fish
+补全装到对应 shell 的标准目录。
 
 ```sh
 git clone git@github.com:yzr95924/yzr_ws.git
 cd yzr_ws
-# 手动将 ./bin 添加到 PATH 环境变量
+
+# 一键安装：yzrws → ~/.local/bin/yzrws，补全按 $SHELL 自动安装
+./scripts/install.sh
+
+# 也可以指定 prefix / bin 目录 / 目标 shell
+./scripts/install.sh --prefix /opt/yzrws
+./scripts/install.sh --bin-dir ~/.local/bin
+./scripts/install.sh --shell all        # 为 bash / zsh / fish 全装
+./scripts/install.sh --shell bash       # 显式指定
+./scripts/install.sh --no-completions   # 只装主命令
+
+# 验证
+yzrws --help
 ```
+
+若 `~/.local/bin` 不在 `PATH` 中，install 脚本会打印临时 / 永久启用提示。
+如需更细粒度的补全管理（仅装 / 仅卸某种 shell、补全到非默认根目录用于打包
+测试等），直接调用 `./scripts/install-completions.sh`，详细参数见
+"Shell 补全" 一节。
 
 ### 卸载
 
-TODO
+`scripts/uninstall.sh` 删除 `~/.local/bin/yzrws` 软链接，并通过
+`install-completions.sh --uninstall` 移除补全；两者均设计为幂等，重复运行安全。
+
+```sh
+./scripts/uninstall.sh                       # 卸载默认位置（~/.local/bin）
+
+# 与 install.sh 保持镜像的参数
+./scripts/uninstall.sh --prefix /opt/yzrws
+./scripts/uninstall.sh --bin-dir ~/.local/bin
+./scripts/uninstall.sh --shell all
+./scripts/uninstall.sh --no-completions      # 只卸主命令，保留补全
+```
+
+> uninstall 仅会删除由 install 脚本创建的**符号链接**（即指向本仓库
+> `bin/yzrws` 的那个）。如之前手动复制过实体文件，请先自行 `rm`，避免误删
+> 他处同名文件。
 
 ## 开发环境配置
 
@@ -88,7 +123,7 @@ TODO
 ./scripts/lint.sh fix
 ```
 
-详细设计见 [`doc/setup_design.md`](./doc/setup_design.md)。
+详细设计见 [`doc/script_design.md`](./doc/script_design.md)。
 
 ## 配置
 
@@ -187,5 +222,5 @@ Provider 名称，无需 yzrws 自身暴露额外接口。
 - 工作项创建：[`./doc/workitem_create_design.md`](./doc/workitem_create_design.md)
 - workspace 初始化：[`./doc/workspace_init_design.md`](./doc/workspace_init_design.md)
 - Session 管理：[`./doc/session_design.md`](./doc/session_design.md)
-- 环境配置：[`./doc/setup_design.md`](./doc/setup_design.md)
+- 环境配置：[`./doc/script_design.md`](./doc/script_design.md)
 - Outline Wiki 对接：[`./doc/outline_wiki_design.md`](./doc/outline_wiki_design.md)（骨架）

@@ -21,7 +21,7 @@
 | --- | --- |
 | `bin/` | 需暴露到 `PATH` 的可执行入口（`yzrws` 主命令等） |
 | `completions/` | shell 命令自动补全脚本 |
-| `doc/` | 设计文档；当前已有：[`command_design.md`](./doc/command_design.md)（命令集）/ [`metadata_design.md`](./doc/metadata_design.md) / [`multi_agent_design.md`](./doc/multi_agent_design.md) / [`provider_design.md`](./doc/provider_design.md) / [`setup_design.md`](./doc/setup_design.md) / [`session_design.md`](./doc/session_design.md) / [`workitem_create_design.md`](./doc/workitem_create_design.md) / [`workspace_init_design.md`](./doc/workspace_init_design.md)（部分仍为骨架） |
+| `doc/` | 设计文档；当前已有：[`command_design.md`](./doc/command_design.md)（命令集）/ [`metadata_design.md`](./doc/metadata_design.md) / [`multi_agent_design.md`](./doc/multi_agent_design.md) / [`provider_design.md`](./doc/provider_design.md) / [`script_design.md`](./doc/script_design.md)（所有 `scripts/*.sh` 的设计汇聚点）/ [`session_design.md`](./doc/session_design.md) / [`workitem_create_design.md`](./doc/workitem_create_design.md) / [`workspace_init_design.md`](./doc/workspace_init_design.md)（部分仍为骨架） |
 | `schema/` | 不同类 wiki 知识的总结模板 |
 | `scripts/` | Shell 安装 / helper 脚本 |
 | `src/` | Python 代码；主包 `src/yzrws/`，开发工具（lint 调度器）`src/devtools/` |
