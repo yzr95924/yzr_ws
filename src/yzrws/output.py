@@ -97,7 +97,7 @@ def print_failure(message: str, hint: str = "") -> None:
     print("=== 初始化失败 ===")
 
 
-# ---- create workitem 报告 ----
+# ---- workitem create 报告 ----
 
 # 设计参考 doc/workitem_create_design.md §输出示例。
 
@@ -137,7 +137,7 @@ def print_create_footer(name: str) -> None:
     print()
     print("=== 创建成功 ===")
     print()
-    print(f"提示：执行 yzrws start {name} 开始工作")
+    print(f"提示：执行 yzrws workitem start {name} 开始工作")
 
 
 def print_workitem_exists(name: str, workspace_path: Path) -> None:
@@ -225,7 +225,7 @@ def print_list_empty() -> None:
     """打印"尚无工作项"的提示信息。"""
     print("尚未创建任何工作项。")
     print()
-    print("提示：执行 yzrws create workitem <name> 创建工作项")
+    print("提示：执行 yzrws workitem create <name> 创建工作项")
 
 
 # ---- model provider 报告 ----
@@ -349,7 +349,7 @@ def print_unused_provider_warning(referenced: list[str], removed_name: str) -> N
     for name in referenced:
         print(f"    - {name}")
     print()
-    print("  这些工作项下次 yzrws start 时将沿用其 setting.json 中的 model，")
+    print("  这些工作项下次 yzrws workitem start 时将沿用其 setting.json 中的 model，")
     print("  并回退到该层其它 Provider / 上层 default；如需解除引用，")
     print("  可使用 yzrws config set provider <name> 显式重设。")
 
@@ -381,7 +381,7 @@ def print_workitem_set_model(
     print()
     print(f"  [设置] setting.json.provider = {provider_name!r}")
     print()
-    print("生效配置（启动时由 yzrws start 加载）：")
+    print("生效配置（启动时由 yzrws workitem start 加载）：")
     print(f"  - model       ：{model}")
     print(f"  - base_url    ：{base_url}")
     print(f"  - agent_types ：{', '.join(agent_types)}")
@@ -397,7 +397,7 @@ def print_workitem_unset_model(workitem_name: str) -> None:
     print()
     print("  [清除] setting.json.provider = null")
     print()
-    print("下次 yzrws start 将回退到 workspace provider.json 的 default；")
+    print("下次 yzrws workitem start 将回退到 workspace provider.json 的 default；")
     print("若 workspace 也无 default，则使用引擎内置默认。")
     print()
     print("=== 清除成功 ===")
@@ -467,7 +467,7 @@ def print_provider_incompatible_for_engine(
     print()
     print("可执行以下操作之一：")
     print("  1. 切换 workitem 的 engine 后重试：")
-    print(f"     yzrws start {workitem_name} --engine <compatible-engine>")
+    print(f"     yzrws workitem start {workitem_name} --engine <compatible-engine>")
     print("  2. 选择一个兼容的 provider：")
     print(f"     yzrws workitem set-model {workitem_name} --provider <other>")
     print(
@@ -544,8 +544,8 @@ def print_session_list_empty(current: str | None) -> None:
     else:
         print(f"当前 current 指针：{current}")
     print()
-    print("提示：执行 yzrws start <workitem> 创建 default session")
-    print("      或 yzrws start <workitem> --session <name> 指定 session 名")
+    print("提示：执行 yzrws workitem start <workitem> 创建 default session")
+    print("      或 yzrws workitem start <workitem> --session <name> 指定 session 名")
 
 
 def print_session_list_footer(current: str | None) -> None:
@@ -621,7 +621,7 @@ def print_session_removed(
     if was_current:
         print(f"  [{STATUS_WARN}] 该 session 是当前 current 指针，已清空")
         print()
-        print("下次 yzrws start 将创建 default session。")
+        print("下次 yzrws workitem start 将创建 default session。")
     print()
     print("=== 删除成功 ===")
 
@@ -658,7 +658,7 @@ def print_session_remove_confirm(
     if is_current:
         print(
             f"  [{STATUS_WARN}] 该 session 是当前 current 指针，"
-            "删除后下次 yzrws start 将创建 default"
+            "删除后下次 yzrws workitem start 将创建 default"
         )
     while True:
         try:
@@ -714,10 +714,10 @@ def print_session_engine_mismatch(
     print()
     print("可执行以下操作之一：")
     print("  1. 去掉 --engine 参数，沿用 session 自带的 engine：")
-    print(f"     yzrws start {workitem_name} --session {session_name}")
+    print(f"     yzrws workitem start {workitem_name} --session {session_name}")
     print("  2. 切换到与 session.engine 一致的 engine：")
     print(
-        f"     yzrws start {workitem_name} --session {session_name} "
+        f"     yzrws workitem start {workitem_name} --session {session_name} "
         f"--engine {session_engine}"
     )
     print("  3. 创建新的同名 session（先删后建）：")

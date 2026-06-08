@@ -363,7 +363,7 @@ def run_update(args: argparse.Namespace) -> int:
     print()
     print("=== 更新成功 ===")
     print()
-    print("所有引用 'default' 的工作项下次 yzrws start 将自动使用新配置。")
+    print("所有引用 'default' 的工作项下次 yzrws workitem start 将自动使用新配置。")
     return 0
 
 
@@ -411,7 +411,9 @@ def run_remove(args: argparse.Namespace) -> int:
         for name in referencing:
             print(f"    - {name}")
         print()
-        print("  这些工作项下次 yzrws start 时会打印 WARN（outline 配置缺失），")
+        print(
+            "  这些工作项下次 yzrws workitem start 时会打印 WARN（outline 配置缺失），"
+        )
         print("  仍可正常启动但不会加载 Outline MCP。")
         print("  如需显式关闭，可执行：")
         for name in referencing:

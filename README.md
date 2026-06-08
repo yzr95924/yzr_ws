@@ -162,7 +162,7 @@ yzrws workitem unset-model <name>                   # 解除（恢复继承 work
 yzrws workitem show <name>                          # 详情 + 回退链解析结果
 ```
 
-绑定后 `yzrws start <name>` 启动前会按回退链加载 `(base_url, auth_key, model)`，
+绑定后 `yzrws workitem start <name>` 启动前会按回退链加载 `(base_url, auth_key, model)`，
 分别注入到 Claude Code 的 `ANTHROPIC_*` 环境变量或 OpenCode 的 `opencode.json`。
 
 ## 常用命令
@@ -172,9 +172,9 @@ yzrws workitem show <name>                          # 详情 + 回退链解析�
 yzrws init
 
 # 创建 / 列举 / 打开工作项
-yzrws create workitem <name> [--engine <engine>] [--start]
+yzrws workitem create <name> [--engine <engine>] [--start]
 yzrws list
-yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
+yzrws workitem start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 
 # 管理 Provider（workspace 级 .config/provider.json）
 yzrws model provider add [--name <name> --base-url <url> --auth-key <key> --model <model>] [--agent-type <engine>]... [--set-default] [-y]
@@ -182,7 +182,7 @@ yzrws model provider list
 yzrws model provider remove <name> [-y]
 yzrws model provider set-default <name>
 
-# 给 workitem 绑定 Provider（生效的 model 由 yzrws start 按回退链加载）
+# 给 workitem 绑定 Provider（生效的 model 由 yzrws workitem start 按回退链加载）
 yzrws workitem set-model <name> --provider <name>
 yzrws workitem unset-model <name>
 yzrws workitem show <name>

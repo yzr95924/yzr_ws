@@ -51,7 +51,7 @@
 
 ### 场景四：工作项创建 / 删除后的同步
 
-**触发条件**：用户执行 `yzrws create workitem` 或 `yzrws delete workitem`。
+**触发条件**：用户执行 `yzrws workitem create` 或 `yzrws delete workitem`。
 
 **期望行为**：自动更新 `metadata.json` 的统计信息，保持与实际状态一致。
 
@@ -227,9 +227,9 @@
 
 | 触发命令 | 更新的字段 | 更新逻辑 |
 | --- | --- | --- |
-| `yzrws create workitem` | `stats.workitem_count++`, `stats.active_workitem_count++`, `recent_workitems`（追加）, `updated_at` | 新工作项加入统计和最近活跃列表 |
+| `yzrws workitem create` | `stats.workitem_count++`, `stats.active_workitem_count++`, `recent_workitems`（追加）, `updated_at` | 新工作项加入统计和最近活跃列表 |
 | `yzrws delete workitem` | `stats.workitem_count--`, `stats.active_workitem_count--`（如适用）, `recent_workitems`（移除）, `updated_at` | 从统计和最近活跃列表中移除 |
-| `yzrws start <workitem>` | `recent_workitems`（更新或追加）, `updated_at` | 工作项变为活跃，更新 `last_active_at` |
+| `yzrws workitem start <workitem>` | `recent_workitems`（更新或追加）, `updated_at` | 工作项变为活跃，更新 `last_active_at` |
 | `yzrws archive <workitem>` | `stats.active_workitem_count--`, `stats.completed_workitem_count++`, `updated_at` | 状态变更时更新统计 |
 | 知识库文件增删 | `stats.knowledge_file_count`, `updated_at` | 扫描 `knowledge/` 目录重新计数 |
 

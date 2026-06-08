@@ -399,12 +399,12 @@ uninstall.sh ──exec──> install-completions.sh --shell <target> --dest-di
 
 | 错误组合 | 触发条件 | bash 处理 | fish 处理 | zsh 处理 |
 | --- | --- | --- | --- | --- |
-| **flag value 被误计为位置参数** | `yzrws start --engine claude-code <name>` | 主函数构建 `cmd_path` 时跳过 value-taking flag 后的 token（`_yzrws_value_taking_flags`） | flag 标记 `-r` 让 fish 自动不把 value 当位置参数 | `_arguments` 的 `'--engine[desc]:msg:action'` 语法内建处理 |
+| **flag value 被误计为位置参数** | `yzrws workitem start --engine claude-code <name>` | 主函数构建 `cmd_path` 时跳过 value-taking flag 后的 token（`_yzrws_value_taking_flags`） | flag 标记 `-r` 让 fish 自动不把 value 当位置参数 | `_arguments` 的 `'--engine[desc]:msg:action'` 语法内建处理 |
 | **leaf 节点后看不到剩余 flag** | `yzrws model provider add <Tab>`（cur 空、n=3、dispatch 返回空） | 兜底分支：COMPREPLY 空时再调一次 `_yzrws_complete_flags ""` | 每个 flag 独立的 `complete -c` 规则，cur 触发条件一致 | `_arguments` 的 `*` 通配剩余 flag |
 | **父级子命令被越级重提** | `yzrws model provider add <Tab>` 后又想补 `model` | cmd_path 仍含 `model`，但当前 case n=3 的位置参数 dispatch 不会去查 n=1 | `not __fish_seen_subcommand_from provider` 排除项 | `case $words[1]` 分发到 leaf，未知 case 落到默认空补全 |
 | **跨子命令污染** | `yzrws model --foo <Tab>` 之类的乱写 | `model` 在 cmd_path 位置 0；`--foo` 不在 flag 表，flag 补全返回空 | `model` 规则要求 `not __fish_seen_subcommand_from provider`，否则不触发 | `_yzrws_model` 走 `_arguments -C` 二级 state，未知值默认空 |
 | **多参"包含"被 OR 误命中浅层**（fish 特有） | `yzrws model <Tab>` 时 `__fish_seen_subcommand_from model provider` 因 OR 语义只匹配 `model` 就成立，错误地补出 add/list/remove/set-default | n/a | 多参包含条件必须用 `; and` 链式： `__fish_seen_subcommand_from A; and __fish_seen_subcommand_from B` | n/a（zsh 用 `_arguments` 的子状态机，不会有此问题） |
-| **同名单词既是顶层又是嵌套子命令**（fish 特有） | `yzrws create workitem <Tab>` 时 `__fish_seen_subcommand_from workitem` 命中（workitem 出现在命令行），导致 `yzrws workitem <subcmd>` 那 5 条规则错误触发，列出 set-model/show 等 | n/a（bash 用位置计数 `n=2` + case `create.workitem` 天然区分） | 顶层 `workitem <subcmd>` 规则必须加 `and not __fish_seen_subcommand_from create` 守卫 | n/a（zsh `_yzrws_create` / `_yzrws_workitem` 是两个独立 state，天然隔离） |
+| **同名单词既是顶层又是嵌套子命令**（fish 特有） | `yzrws workitem create <Tab>` 时 `__fish_seen_subcommand_from workitem` 命中（workitem 是 `create` 的父级也是子命令名），导致 `yzrws workitem <subcmd>` 那 5 条规则错误触发，列出 set-model/show 等 | n/a（bash 用位置计数 `n=2` + case `workitem.create` 天然区分） | 顶层 `workitem <subcmd>` 规则必须加 `and not __fish_seen_subcommand_from create` 守卫 | n/a（zsh `_yzrws_workitem` 是单一 state，`workitem create` 与 `workitem set-model` 等走同一个 dispatch，天然隔离） |
 
 > 三种 shell 都在 `completions/*.sh` 顶部加了对应的"防御性补全原则"注释，
 > 与本节表格对齐——这样后续修改任一 shell 补全时，能直接对照此表

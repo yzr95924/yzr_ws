@@ -1,6 +1,6 @@
 # bash completion for yzrws
 #
-# 支持 yzrws 顶层命令 + 二级 / 三级子命令（create workitem / model provider add / 等）
+# 支持 yzrws 顶层命令 + 二级 / 三级子命令（workitem create / model provider add / 等）
 # 的 Tab 补全。文件名、provider 名、引擎名等动态值在补全时从 workspace 目录
 # 与 provider.json 实时读取，无需 yzrws 自身暴露额外接口。
 #
@@ -8,7 +8,7 @@
 #
 # 防御性补全原则（与 doc/script_design.md "install-completions.sh" 节对齐）：
 #   - 命令路径 cmd_path 剔除所有 flag 与 flag value，避免误把 flag 值当
-#     位置参数（典型反例：yzrws start --engine claude-code 把 claude-code
+#     位置参数（典型反例：yzrws workitem start --engine claude-code 把 claude-code
 #     误计为二级子命令）
 #   - 位置参数层无结果时自动兜底到 flag 名补全（典型反例：yzrws model
 #     provider add <Tab> 时 cur 是空，dispatch 返回空，用户看不到 --name
@@ -106,8 +106,8 @@ PYEOF
 }
 
 # 列出所有"后接值"的 flag。位置参数解析阶段会跳过这些 flag 后面的 token，
-# 避免把"yzrws start --engine claude-code <name>"误认成
-# "yzrws <start> <claude-code> <name>"（导致 dispatch 走错分支）。
+# 避免把"yzrws workitem start --engine claude-code <name>"误认成
+# "yzrws <workitem> <start> <claude-code> <name>"（导致 dispatch 走错分支）。
 #
 # 与 argparse 中带 nargs=1 / nargs='?' 的 flag 保持一致；新增 value-taking
 # flag 时务必同步本函数。
@@ -142,8 +142,6 @@ _yzrws_complete_flags() {
             case "${positional[0]}" in
                 init) flags="-h --help" ;;
                 list) flags="-h --help" ;;
-                create) flags="-h --help" ;;
-                start) flags="-h --help --engine -e --session -s --title -t" ;;
                 model) flags="-h --help" ;;
                 workitem) flags="-h --help" ;;
                 outline) flags="-h --help" ;;
@@ -151,8 +149,9 @@ _yzrws_complete_flags() {
             ;;
         2)
             case "${positional[0]}.${positional[1]}" in
-                create.workitem) flags="-h --help --engine --start" ;;
                 model.provider) flags="-h --help" ;;
+                workitem.create) flags="-h --help --engine --start" ;;
+                workitem.start) flags="-h --help --engine -e --session -s --title -t" ;;
                 workitem.set-model) flags="-h --help --provider" ;;
                 workitem.unset-model) flags="-h --help" ;;
                 workitem.show) flags="-h --help" ;;
@@ -163,9 +162,6 @@ _yzrws_complete_flags() {
                 outline.show) flags="-h --help" ;;
                 outline.update) flags="-h --help --endpoint --auth-token -y --yes" ;;
                 outline.remove) flags="-h --help -y --yes" ;;
-                # yzrws start <workitem>  -- 位置参数已填，但用户仍可能想
-                # 加 --engine 等 flag。start.* 兜住这类场景。
-                start.*) flags="-h --help --engine -e --session -s --title -t" ;;
             esac
             ;;
         3|4)
@@ -182,12 +178,13 @@ _yzrws_complete_flags() {
                 model.provider.set-default) flags="-h --help" ;;
             esac
             # 兜底：若 3 元素不匹配，回退到 2 元素前缀。
-            # 处理 "create workitem <name>" 已填名字后想看 --start 的场景：
-            # 此时 positional = (create, workitem, <name>)，3 元素不命中任何
-            # 具体子命令，但 2 元素前缀 "create.workitem" 是合法模式。
+            # 处理 "workitem create <name>" 已填名字后想看 --start 的场景：
+            # 此时 positional = (workitem, create, <name>)，3 元素不命中任何
+            # 具体子命令，但 2 元素前缀 "workitem.create" 是合法模式。
             if [[ -z "$flags" && "${#positional[@]}" -ge 2 ]]; then
                 case "${positional[0]}.${positional[1]}" in
-                    create.workitem) flags="-h --help --engine --start" ;;
+                    workitem.create) flags="-h --help --engine --start" ;;
+                    workitem.start) flags="-h --help --engine -e --session -s --title -t" ;;
                 esac
             fi
             ;;
@@ -209,17 +206,11 @@ _yzrws_dispatch_1() {
     local cmd="$1" cur="$2"
     case "$cmd" in
         init|list) COMPREPLY=() ;;           # 无位置参数
-        create)
-            COMPREPLY=( $(compgen -W "workitem" -- "$cur") )
-            ;;
-        start)
-            COMPREPLY=( $(compgen -W "$(_yzrws_workitems)" -- "$cur") )
-            ;;
         model)
             COMPREPLY=( $(compgen -W "provider" -- "$cur") )
             ;;
         workitem)
-            COMPREPLY=( $(compgen -W "set-model unset-model show set-outline unset-outline unset-outline-readonly session" -- "$cur") )
+            COMPREPLY=( $(compgen -W "create set-model unset-model show set-outline unset-outline unset-outline-readonly session" -- "$cur") )
             ;;
         outline)
             COMPREPLY=( $(compgen -W "add show update remove" -- "$cur") )
@@ -232,12 +223,12 @@ _yzrws_dispatch_1() {
 _yzrws_dispatch_2() {
     local cmd="$1" sub="$2" cur="$3"
     case "$cmd.$sub" in
-        # yzrws create workitem <name>
+        # yzrws workitem create <name>
         # 故意不补全已有 workitem 名——create 期望创建新名
-        create.workitem) COMPREPLY=() ;;
+        workitem.create) COMPREPLY=() ;;
 
-        # start 不再有位置参数（第一位置已在 _yzrws_dispatch_1 处理）
-        start.*) COMPREPLY=() ;;
+        # yzrws workitem start <name> — 补已有 workitem 名
+        workitem.start) COMPREPLY=( $(compgen -W "$(_yzrws_workitems)" -- "$cur") ) ;;
 
         # yzrws model provider <subcmd>
         model.provider)
@@ -316,12 +307,12 @@ _yzrws_handle_value_flags() {
             return 0
             ;;
         --session|-s)
-            # yzrws start --session <Tab>：从 COMP_WORDS 反推最近的工作项名
+            # yzrws workitem start --session <Tab>：从 COMP_WORDS 反推最近的工作项名
             local wi=""
             local j tok
             for ((j = 1; j < COMP_CWORD; j++)); do
                 tok="${COMP_WORDS[$j]}"
-                if [[ "$tok" != -* && "$tok" != "start" && "$tok" != "yzrws" ]]; then
+                if [[ "$tok" != -* && "$tok" != "yzrws" && "$tok" != "workitem" && "$tok" != "start" ]]; then
                     wi="$tok"
                 fi
             done
@@ -360,7 +351,7 @@ _yzrws_handle_value_flags() {
 #
 # 这样能消除两类典型错误组合：
 #   1. value-taking flag 的值被误计为位置参数
-#      → yzrws start --engine claude-code 仍能正确补 <name>
+#      → yzrws workitem start --engine claude-code 仍能正确补 <name>
 #   2. 已走到 leaf 节点后用户按 Tab 想看剩余 flag 时一片空白
 #      → yzrws model provider add <Tab> 能看到 --name / --base-url 等
 _yzrws() {
@@ -416,7 +407,7 @@ _yzrws() {
 
     # ---- 位置参数补全 ----
     case "$n" in
-        0) COMPREPLY=( $(compgen -W "init create list start model workitem outline" -- "$cur") ) ;;
+        0) COMPREPLY=( $(compgen -W "init list model workitem outline" -- "$cur") ) ;;
         1) _yzrws_dispatch_1 "${cmd_path[0]}" "$cur" ;;
         2) _yzrws_dispatch_2 "${cmd_path[0]}" "${cmd_path[1]}" "$cur" ;;
         3) _yzrws_dispatch_3 "${cmd_path[0]}" "${cmd_path[1]}" "${cmd_path[2]}" "$cur" ;;

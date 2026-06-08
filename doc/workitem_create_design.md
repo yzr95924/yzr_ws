@@ -2,7 +2,7 @@
 
 ## 概述
 
-`yzrws create workitem <name>` 用于在工作区中创建一个新的工作项。
+`yzrws workitem create <name>` 用于在工作区中创建一个新的工作项。
 每个工作项是一个独立目录，包含完整的目录结构和初始文件，
 绑定一个可恢复的 Code Agent Session，支持断点续传和知识沉淀。
 
@@ -60,7 +60,7 @@
 
 **触发条件**：用户希望创建完工作项后立即进入 Agent 会话。
 
-**期望行为**：通过 `--start` 参数串联创建和启动流程，创建完成后自动执行 `yzrws start`。
+**期望行为**：通过 `--start` 参数串联创建和启动流程，创建完成后自动执行 `yzrws workitem start`。
 
 **困难与挑战**：
 
@@ -93,13 +93,13 @@
 
 创建全部目录和文件，写入合理的模板内容，同步更新 `metadata.json`。
 
-- 收益：开箱即用，创建后直接 `yzrws start` 即可进入工作；
+- 收益：开箱即用，创建后直接 `yzrws workitem start` 即可进入工作；
   workspace 级统计保持准确
 - 代价：需要设计每个文件的模板内容和命名校验规则；实现复杂度中等
 
 #### 方案 C：不处理（基线）
 
-不实现 `create workitem`，让用户手动 `mkdir` + 创建文件。
+不实现 `workitem create`，让用户手动 `mkdir` + 创建文件。
 
 - 适用于：项目极早期、不需要标准化工具流程时
 
@@ -125,7 +125,7 @@
 
 ### 否决理由
 
-- **方案 A**：缺少 `setting.json` 会导致 `yzrws start` 无法确定引擎；
+- **方案 A**：缺少 `setting.json` 会导致 `yzrws workitem start` 无法确定引擎；
   不同步 `metadata.json` 会导致统计数据不一致
 - **不处理**：手动创建 2 个目录 + 4 个文件的流程容易出错，
   且无法保证不同工作项的结构一致
@@ -133,7 +133,7 @@
 ## 创建流程
 
 ```text
-yzrws create workitem <name> [--engine <engine>] [--start]
+yzrws workitem create <name> [--engine <engine>] [--start]
   │
   ├── 1. 前置检查
   │     ├── 校验 workspace 是否已初始化
@@ -165,7 +165,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
   │     └── 列出创建的目录和文件清单
   │
   └── 6. 可选：串联启动（--start）
-        └── 创建成功后自动执行 yzrws start <name>
+        └── 创建成功后自动执行 yzrws workitem start <name>
 ```
 
 ## 模板内容
@@ -274,7 +274,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 ### 错误提示示例
 
 ```sh
-$ yzrws create workitem "My Task"
+$ yzrws workitem create "My Task"
 
 [错误] 工作项名称不合法："My Task"
 
@@ -289,7 +289,7 @@ $ yzrws create workitem "My Task"
 
 ## 前置检查
 
-`create workitem` 在执行前需要确认 workspace 处于可用状态：
+`workitem create` 在执行前需要确认 workspace 处于可用状态：
 
 ```text
 检查项                         缺失时行为
@@ -303,7 +303,7 @@ $ yzrws create workitem "My Task"
 ### workspace 未初始化的错误提示
 
 ```sh
-$ yzrws create workitem my-task
+$ yzrws workitem create my-task
 
 [错误] 工作区未初始化：~/yzr_workspace/metadata.json 不存在
 
@@ -330,14 +330,14 @@ $ yzrws create workitem my-task
 ### 命令格式
 
 ```sh
-yzrws create workitem <name> [--engine <engine>] [--start]
+yzrws workitem create <name> [--engine <engine>] [--start]
 ```
 
 | 参数 | 是否必须 | 说明 |
 | --- | --- | --- |
 | `<name>` | ✓ | 工作项名称，需符合命名规则 |
 | `--engine <engine>` | ✗ | 指定 Agent 引擎（覆盖全局默认值） |
-| `--start` | ✗ | 创建完成后自动执行 `yzrws start <name>` |
+| `--start` | ✗ | 创建完成后自动执行 `yzrws workitem start <name>` |
 
 ### 退出码
 
@@ -351,7 +351,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 正常创建：
 
 ```sh
-$ yzrws create workitem api-refactor
+$ yzrws workitem create api-refactor
 
 === 创建工作项 ===
 
@@ -369,13 +369,13 @@ $ yzrws create workitem api-refactor
 
 === 创建成功 ===
 
-提示：执行 yzrws start api-refactor 开始工作
+提示：执行 yzrws workitem start api-refactor 开始工作
 ```
 
 名称已存在：
 
 ```sh
-$ yzrws create workitem api-refactor
+$ yzrws workitem create api-refactor
 
 === 创建工作项 ===
 
@@ -386,7 +386,7 @@ $ yzrws create workitem api-refactor
 
 | 文件 | 说明 | 纳入版本控制 |
 | --- | --- | --- |
-| `src/yzrws/commands/create.py` | workitem 创建入口（yzrws create workitem） | ✓ |
+| `src/yzrws/commands/workitem.py` | workitem 创建入口（yzrws workitem create） | ✓ |
 | `~/yzr_workspace/<name>/workitem.json` | 运行时工作项元数据 | 由用户决定 |
 | `~/yzr_workspace/<name>/setting.json` | 运行时引擎配置 | 由用户决定 |
 | `~/yzr_workspace/<name>/CLAUDE.md` | 运行时工作项上下文 | 由用户决定 |
@@ -397,11 +397,11 @@ $ yzrws create workitem api-refactor
 
 ## 与其他文档的关系
 
-- [`command_design.md`](./command_design.md)：定义了 `yzrws create workitem` 的命令骨架，
+- [`command_design.md`](./command_design.md)：定义了 `yzrws workitem create` 的命令骨架，
   本文档是其细化
-- [`workspace_init_design.md`](./workspace_init_design.md)：`create workitem` 依赖 workspace 已初始化
+- [`workspace_init_design.md`](./workspace_init_design.md)：`workitem create` 依赖 workspace 已初始化
 - [`metadata_design.md`](./metadata_design.md)：创建后的 `metadata.json` 增量更新逻辑
 - [`multi_agent_design.md`](./multi_agent_design.md)：`setting.json` 的完整 schema 和引擎选择策略
 - [`session_design.md`](./session_design.md)：工作项创建时不生成 `session.json`，
-  首次 `yzrws start` 时才创建
+  首次 `yzrws workitem start` 时才创建
 - [`provider_design.md`](./provider_design.md)：`provider: null` 时的回退链和 workspace 级 Provider 配置

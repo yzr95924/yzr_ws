@@ -1,6 +1,6 @@
 # fish completion for yzrws
 #
-# 支持顶层命令 + 二级 / 三级子命令（create workitem / model provider add / 等）
+# 支持顶层命令 + 二级 / 三级子命令（workitem create / model provider add / 等）
 # 的 Tab 补全。workitem 名、provider 名、引擎名等动态值在补全时实时从
 # workspace 目录与 provider.json 读取——无需 yzrws 自身暴露额外接口。
 #
@@ -83,6 +83,38 @@ function __yzrws_engines
     echo opencode
 end
 
+# 列出指定 workitem 下的"用户命名 session"（排除 _archive_*），
+# 用于 yzrws workitem start --session / yzrws workitem session show/remove/use 的值补全。
+# 从 commandline 提取 workitem 名（位于第 4 个 token：yzrws workitem start <wi> ...）。
+# 注：commandline -opc 输出不含光标处 token；yzrws workitem start <wi> --session <cur>
+# 的 workitem 始终是固定位置，提取安全。
+function __yzrws_sessions_for_wi
+    set -l args (commandline -opc)
+    if test (count $args) -lt 4
+        return
+    end
+    set -l wi $args[4]
+    if test -z "$wi"
+        return
+    end
+    set -l ws (__yzrws_workspace_path)
+    set -l sessions_dir "$ws/$wi/sessions"
+    if not test -d "$sessions_dir"
+        return
+    end
+    python3 -c "
+import os, sys
+d = sys.argv[1]
+try:
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith('.json') or fn.startswith('_'):
+            continue
+        print(fn[:-5])
+except OSError:
+    sys.exit(0)
+" "$sessions_dir" 2>/dev/null
+end
+
 # --agent-type 候选值：在 engine 列表基础上加特殊值 "all"（兼容所有 engine）
 function __yzrws_agent_type_values
     echo all
@@ -101,38 +133,16 @@ complete -c yzrws -f
 # ==================================================================
 
 complete -c yzrws -n "__fish_use_subcommand" -a init -d "初始化 workspace 目录结构"
-complete -c yzrws -n "__fish_use_subcommand" -a create -d "创建工作项等资源"
 complete -c yzrws -n "__fish_use_subcommand" -a list -d "列举所有工作项及其元数据"
-complete -c yzrws -n "__fish_use_subcommand" -a start -d "打开工作项并启动 Agent 会话"
 complete -c yzrws -n "__fish_use_subcommand" -a model -d "管理模型与 Provider 配置"
 complete -c yzrws -n "__fish_use_subcommand" -a workitem -d "管理 workitem 级别配置"
 complete -c yzrws -n "__fish_use_subcommand" -a outline -d "管理 Outline Wiki MCP 配置"
-
-# ==================================================================
-# yzrws create ...
-# ==================================================================
-
-complete -c yzrws -n "__fish_seen_subcommand_from create; and not __fish_seen_subcommand_from workitem" -a workitem -d "创建一个新的工作项"
-
-# yzrws create workitem <name> [--engine ...] [--start]
-complete -c yzrws -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from workitem" -l engine -s e -r -a "(__yzrws_engines)" -d "指定 Agent 引擎（覆盖全局默认）"
-complete -c yzrws -n "__fish_seen_subcommand_from create; and __fish_seen_subcommand_from workitem" -l start -d "创建完成后自动执行 yzrws start"
 
 # ==================================================================
 # yzrws list  /  yzrws init  无子命令
 # ==================================================================
 
 # 已通过 -f 关闭 file completion；无规则时不会补全任何东西，符合预期
-
-# ==================================================================
-# yzrws start ...
-# ==================================================================
-
-# yzrws start <name>
-complete -c yzrws -n "__fish_seen_subcommand_from start; and not __fish_seen_subcommand_from -l" -fa "(__yzrws_workitems)"
-
-# yzrws start --engine
-complete -c yzrws -n "__fish_seen_subcommand_from start" -l engine -s e -r -a "(__yzrws_engines)" -d "指定引擎（创建或切换时使用）"
 
 # ==================================================================
 # yzrws model ...
@@ -168,38 +178,103 @@ complete -c yzrws -n "__fish_seen_subcommand_from model; and __fish_seen_subcomm
 # ==================================================================
 #
 # 守卫 `and not __fish_seen_subcommand_from create`：
-#   `workitem` 既是顶层子命令，也是 `create` 的二级子命令。`__fish_seen_subcommand_from`
-#   是 OR 语义——只要 `workitem` 出现在命令行任意位置就命中。如果不加 create
-#   排除，下方 5 条 `yzrws workitem <subcmd>` 规则会在
-#   `yzrws create workitem <Tab>` 时也触发，错误地列出 set-model/show 等
-#   本不该出现的位置。
-#
-# create workitem 的反向（yzrws create workitem 下应只见 --engine/--start）
-# 已经天然正确：那些规则用 `__fish_seen_subcommand_from create; and
-# __fish_seen_subcommand_from workitem`，要求 create 必须出现，所以
-# 顶层 `yzrws workitem ...` 不会触发它们。
+#   `__fish_seen_subcommand_from` 是 OR 语义——只要子命令出现在命令行任意
+#   位置就命中。当用户输入 `yzrws workitem create <Tab>` 时，下方几条
+#   `yzrws workitem <subcmd>` 规则会因为 `__fish_seen_subcommand_from workitem`
+#   命中而触发；不带 create 排除的话，会错误地列出 set-model / show 等
+#   本不该出现的位置。同理 start 也要加入排除集——`yzrws workitem start <Tab>`
+#   也不应列出 set-model / show / create 等。
 
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-model" -d "把 workitem 绑定到某个 Provider"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-model" -d "解除 workitem 的 Provider 绑定"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "show" -d "展示 workitem 完整配置与生效模型"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "set-outline" -d "为 workitem 启用 Outline MCP"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from set-model unset-model show set-outline unset-outline" -a "unset-outline" -d "解除 workitem 的 Outline MCP 引用"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "create" -d "创建一个新的工作项"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "start" -d "打开工作项并启动 Agent 会话"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "set-model" -d "把 workitem 绑定到某个 Provider"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "unset-model" -d "解除 workitem 的 Provider 绑定"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "show" -d "展示 workitem 完整配置与生效模型"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "set-outline" -d "为 workitem 启用 Outline MCP"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "unset-outline" -d "解除 workitem 的 Outline MCP 引用"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start set-model unset-model show set-outline unset-outline session" -a "session" -d "管理 workitem 下的多 session"
+
+# yzrws workitem session <list|show|remove|use> — 三级 dispatch
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and not __fish_seen_subcommand_from list show remove use" -a "list" -d "列出 workitem 下所有 session"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and not __fish_seen_subcommand_from list show remove use" -a "show" -d "显示 session 详情"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and not __fish_seen_subcommand_from list show remove use" -a "remove" -d "删除 session（仅 yzrws 元数据）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and not __fish_seen_subcommand_from list show remove use" -a "use" -d "切换 current 指针"
+
+# yzrws workitem session list <workitem>
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from list" -fa "(__yzrws_workitems)"
+
+# yzrws workitem session show <workitem> <session>
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from show" -fa "(__yzrws_workitems)"
+
+# yzrws workitem session remove <workitem> <session> [-y]
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from remove" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from remove" -l yes -s y -d "跳过确认直接删除"
+
+# yzrws workitem session use <workitem> <session>
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from use" -fa "(__yzrws_workitems)"
+
+# yzrws workitem session <show|remove|use> <workitem> <session> — 第 3 位置补 session
+# 注：workitem 名已知（已补过），fish 自身不易知道当前是哪个 workitem；
+# 简单实现：从 commandline 提取第 5 个 token 作为 workitem，调 __yzrws_sessions_for_wi 风格的过滤。
+# 为避免重复实现，直接复用 workitem 名补全集（__yzrws_workitems 已被 set-model 规则用）；
+# session 名补全通过提取 workitem 后调用 session list 脚本。
+function __yzrws_sessions_from_commandline
+    set -l args (commandline -opc)
+    # yzrws workitem session <sub> <wi> <cur>
+    if test (count $args) -lt 5
+        return
+    end
+    set -l wi $args[5]
+    if test -z "$wi"
+        return
+    end
+    set -l ws (__yzrws_workspace_path)
+    set -l sessions_dir "$ws/$wi/sessions"
+    if not test -d "$sessions_dir"
+        return
+    end
+    python3 -c "
+import os, sys
+d = sys.argv[1]
+try:
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith('.json') or fn.startswith('_'):
+            continue
+        print(fn[:-5])
+except OSError:
+    sys.exit(0)
+" "$sessions_dir" 2>/dev/null
+end
+
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from show; and not __fish_seen_subcommand_from -l" -fa "(__yzrws_sessions_from_commandline)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from remove; and not __fish_seen_subcommand_from -l" -fa "(__yzrws_sessions_from_commandline)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from session; and __fish_seen_subcommand_from use" -fa "(__yzrws_sessions_from_commandline)"
+
+# yzrws workitem create <name> [--engine ...] [--start]
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and __fish_seen_subcommand_from create" -l engine -s e -r -a "(__yzrws_engines)" -d "指定 Agent 引擎（覆盖全局默认）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and __fish_seen_subcommand_from create" -l start -d "创建完成后自动执行 yzrws workitem start"
+
+# yzrws workitem start <name> [--engine ...] [--session ...] [--title "..."]
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from start" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from start" -l engine -s e -r -a "(__yzrws_engines)" -d "指定引擎（创建或切换时使用）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from start" -l session -s s -r -a "(__yzrws_sessions_for_wi)" -d "指定要恢复/创建的 session 名（缺省 = current 指针或 'default'）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from start" -l title -s t -d "新建 session 时设置 title"
 
 # yzrws workitem set-model <name> --provider <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-model" -fa "(__yzrws_workitems)"
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-model" -l provider -r -a "(__yzrws_providers)" -d "Provider 名称（必须已配置）"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from set-model" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from set-model" -l provider -r -a "(__yzrws_providers)" -d "Provider 名称（必须已配置）"
 
 # yzrws workitem unset-model <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from unset-model" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from unset-model" -fa "(__yzrws_workitems)"
 
 # yzrws workitem show <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from show" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from show" -fa "(__yzrws_workitems)"
 
 # yzrws workitem set-outline <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from set-outline" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from set-outline" -fa "(__yzrws_workitems)"
 
 # yzrws workitem unset-outline <name>
-complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and __fish_seen_subcommand_from unset-outline" -fa "(__yzrws_workitems)"
+complete -c yzrws -n "__fish_seen_subcommand_from workitem; and not __fish_seen_subcommand_from create; and not __fish_seen_subcommand_from start; and __fish_seen_subcommand_from unset-outline" -fa "(__yzrws_workitems)"
 
 # ==================================================================
 # yzrws outline ...

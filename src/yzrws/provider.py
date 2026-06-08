@@ -371,7 +371,7 @@ def set_default(config: ProviderConfig, name: str) -> ProviderConfig:
 
 
 # ==================================================================
-# 回退链解析（yzrws workitem set-model / yzrws start 消费）
+# 回退链解析（yzrws workitem set-model / yzrws workitem start 消费）
 # ==================================================================
 
 
@@ -391,7 +391,7 @@ class ResolvedModel:
         model: 模型名称；可能为 None。
         provider_name: 解析命中的 Provider 名称（来源层）；None 表示未命中。
         source: "workitem" / "workspace_default" / "none" 三选一。
-        agent_types: 该 Provider 兼容的 engine 列表；用于 yzrws start 做兼容性
+        agent_types: 该 Provider 兼容的 engine 列表；用于 yzrws workitem start 做兼容性
             警告检查。空列表表示未命中（即 source="none"）。
     """
 

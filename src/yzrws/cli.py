@@ -60,7 +60,7 @@ def _needs_help(argv: Sequence[str] | None) -> bool:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI 主入口：parse → dispatch → 返回退出码。
 
-    使用 parse_known_args 而非 parse_args，以便子命令（如 create workitem）
+    使用 parse_known_args 而非 parse_args，以便子命令（如 workitem create）
     可以有自己的参数和嵌套子命令——顶层只识别 command 名称，
     其余参数通过 args.subcmd_argv 传递给具体命令处理器。
 

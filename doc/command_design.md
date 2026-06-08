@@ -140,17 +140,17 @@ $ cat ~/yzr_workspace/MEMORY.md
 ### 命令格式
 
 ```text
-yzrws create workitem <name> [--engine <engine>] [--start]
+yzrws workitem create <name> [--engine <engine>] [--start]
 ```
 
-- **执行入口**：`bin/yzrws create workitem <name>`（通过 `python -m yzrws create workitem <name>` 等价调用）
+- **执行入口**：`bin/yzrws workitem create <name>`（通过 `python -m yzrws workitem create <name>` 等价调用）
 - **参数**：
 
 | 参数 | 是否必须 | 说明 |
 | --- | --- | --- |
 | `<name>` | ✓ | 工作项名称，需符合命名规则（见下方 §命名规则） |
 | `--engine <engine>` | ✗ | 指定 Agent 引擎，覆盖全局默认值 |
-| `--start` | ✗ | 创建完成后自动执行 `yzrws start <name>` |
+| `--start` | ✗ | 创建完成后自动执行 `yzrws workitem start <name>` |
 
 ### 命名规则
 
@@ -162,7 +162,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 
 ### 行为
 
-`yzrws create workitem <name>` 在 workspace 下创建一个完整的工作项目录。处理 4 类场景：
+`yzrws workitem create <name>` 在 workspace 下创建一个完整的工作项目录。处理 4 类场景：
 
 1. **正常创建**：workspace 已初始化且名称合法时，创建目录结构（`<name>/`、`raw/`、`local_wiki/`）、
    写入初始文件（`workitem.json`、`setting.json`、`CLAUDE.md`），并同步更新 `metadata.json`
@@ -198,7 +198,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 
 === 创建成功 ===
 
-提示：执行 yzrws start api-refactor 开始工作
+提示：执行 yzrws workitem start api-refactor 开始工作
 ```
 
 名称已存在：
@@ -243,7 +243,7 @@ yzrws create workitem <name> [--engine <engine>] [--start]
   兼容 `init` 写入的最小集 `{version, created_at, updated_at}`
 - **local_wiki/.gitkeep**：`local_wiki/` 下写入 `.gitkeep` 以支持版本控制；
   `raw/` 不放（原始语料通常不纳入版本控制，符合 README 约定）
-- **--start 串联**：通过 `subprocess` 调用 `yzrws start`，创建失败时不触发启动；
+- **--start 串联**：通过 `subprocess` 调用 `yzrws workitem start`，创建失败时不触发启动；
   `yzrws` 不在 PATH 时优雅降级
 
 ### 相关文档
@@ -251,11 +251,11 @@ yzrws create workitem <name> [--engine <engine>] [--start]
 - [`workitem_create_design.md`](./workitem_create_design.md)：完整设计文档
   （场景分析、方案选择、模板内容、命名规则、元数据同步）
 - [`metadata_design.md`](./metadata_design.md)：`metadata.json` 增量更新逻辑
-- [`workspace_init_design.md`](./workspace_init_design.md)：`create workitem` 依赖 workspace 已初始化
+- [`workspace_init_design.md`](./workspace_init_design.md)：`workitem create` 依赖 workspace 已初始化
 - [`multi_agent_design.md`](./multi_agent_design.md)：`setting.json` 完整 schema 和引擎选择策略
 - [`provider_design.md`](./provider_design.md)：`provider: null` 时的回退链
 - [`session_design.md`](./session_design.md)：工作项创建时不生成 `session.json`，
-  首次 `yzrws start` 时才创建
+  首次 `yzrws workitem start` 时才创建
 
 ## 列举 workitem
 
@@ -275,7 +275,7 @@ yzrws list
 1. **正常工作项列表**：workspace 已初始化且包含工作项时，以表格形式展示
    NAME / STATUS / ENGINE / CREATED 四列，按 `created_at` 降序排序（最新的在前）
 2. **空 workspace**：workspace 已初始化但无任何工作项时，输出"尚未创建任何工作项"，
-   附带 `yzrws create workitem <name>` 命令提示
+   附带 `yzrws workitem create <name>` 命令提示
 3. **workspace 未初始化**：`~/yzr_workspace/metadata.json` 不存在时，
    提示执行 `yzrws init`，退出码 1
 
@@ -300,7 +300,7 @@ alpha-project  active  claude-code  2026-06-06
 
 尚未创建任何工作项。
 
-提示：执行 yzrws create workitem <name> 创建工作项
+提示：执行 yzrws workitem create <name> 创建工作项
 ```
 
 workspace 未初始化：
@@ -344,10 +344,10 @@ workspace 未初始化：
 ### 命令格式
 
 ```text
-yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
+yzrws workitem start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 ```
 
-- **执行入口**：`bin/yzrws start <name>`（通过 `python -m yzrws start <name>` 等价调用）
+- **执行入口**：`bin/yzrws workitem start <name>`（通过 `python -m yzrws workitem start <name>` 等价调用）
 - **参数**：
 
 | 参数 | 是否必须 | 说明 |
@@ -359,9 +359,9 @@ yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 
 ### 行为
 
-`yzrws start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
+`yzrws workitem start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
 
-1. **自动创建**：工作项不存在时，自动调用 `create workitem` 逻辑创建，然后启动会话
+1. **自动创建**：工作项不存在时，自动调用 `workitem create` 逻辑创建，然后启动会话
 2. **启动新会话**：工作项已存在且无 session 记录时，启动新会话（用 `--session` 指定名或 `default`）
 3. **恢复会话**：workitem 存在且 `--session` / current 指针指向的 session 元数据存在时，自动恢复
 4. **引擎冲突**：`--engine` 与现存 `session.engine` 不一致时 **error**（提示用户换 session 或去掉 `--engine`）
@@ -372,14 +372,15 @@ yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 
 ### 行为（打开 workitem）
 
-`yzrws start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
+`yzrws workitem start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
 
-1. **自动创建**：工作项不存在时，自动调用 `create workitem` 逻辑创建，然后启动会话
+1. **自动创建**：工作项不存在时，自动调用 `workitem create` 逻辑创建，然后启动会话
 2. **启动新会话**：工作项已存在且无 session 记录时，启动新会话
 3. **恢复会话**：工作项已存在且有 session 记录时，自动恢复上次会话（无需 `--new` 标志）
 4. **引擎切换**：`--engine` 参数与 `setting.json` 不同时，归档旧 session 并切换引擎
 
-> session 恢复决策完全自动化：存在则恢复（无论 `setting.json` 是否被改过），不存在则新建。原 `--new` 标志已移除——`yzrws start` 只保留 `<name>` 必填 + `--engine` 可选两个参数。
+> session 恢复决策完全自动化：存在则恢复（无论 `setting.json` 是否被改过），不存在则新建。
+> 原 `--new` 标志已移除——`yzrws workitem start` 只保留 `<name>` 必填 + `--engine` 可选两个参数。
 
 ### 输出格式
 
@@ -404,7 +405,7 @@ yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 
 === 创建成功 ===
 
-提示：执行 yzrws start my-task 开始工作
+提示：执行 yzrws workitem start my-task 开始工作
 
 创建工作项完成，继续启动会话...
 
@@ -470,9 +471,9 @@ Session：explore-outline  [新建]
 
 可执行以下操作之一：
   1. 去掉 --engine 参数，沿用 session 自带的 engine：
-     yzrws start my-task --session default
+     yzrws workitem start my-task --session default
   2. 切换到与 session.engine 一致的 engine：
-     yzrws start my-task --session default --engine claude-code
+     yzrws workitem start my-task --session default --engine claude-code
   3. 创建新的同名 session（先删后建）：
      yzrws workitem session remove my-task default
 ```
@@ -487,7 +488,7 @@ Session：explore-outline  [新建]
 
 ### 实现细节
 
-- **自动创建**：复用 `create workitem` 的目录和文件创建逻辑，无需用户先执行 `create`
+- **自动创建**：复用 `workitem create` 的目录和文件创建逻辑，无需用户先执行 `workitem create`
 - **引擎选择**：优先级为 `--engine` 参数 → `setting.json` → 全局默认 → `claude-code`
 - **多 session 决策**：target session 名 = `--session` → `session.json.current` → `'default'`；
   完整流程见 [`session_design.md`](./session_design.md) §Session 生命周期
@@ -620,7 +621,7 @@ Provider：anthropic
     - api-refactor
     - doc-restructure
 
-  这些工作项下次 yzrws start 时将沿用其 setting.json 中的 `model` /
+  这些工作项下次 yzrws workitem start 时将沿用其 setting.json 中的 `model` /
   `provider`，按 [`provider_design.md §回退链`](./provider_design.md) 解析；如需解除引用，
   当前可用 `yzrws workitem unset-model <name>` 显式重设（`yzrws config set` 未实现）。
 ```
@@ -670,7 +671,7 @@ workspace 未初始化：
   便于下次 load 还原为空 `ProviderConfig`
 - **错误信息**：JSON 损坏 / 字段缺失 / 类型错误统一抛 `ProviderConfigError`，
   由 `print_failure` 报告
-- **与 workitem 兼容性**：被 `yzrws workitem set-model` 与 `yzrws start` 消费；
+- **与 workitem 兼容性**：被 `yzrws workitem set-model` 与 `yzrws workitem start` 消费；
   set-model 在不兼容时报错，start 仅打印 WARN（允许临时 `--engine` 切换）
 
 ### 相关文档
@@ -678,14 +679,16 @@ workspace 未初始化：
 - [`provider_design.md`](./provider_design.md)：Provider 配置的完整设计
   （场景分析、方案选择、Schema、回退链、创建流程、管理命令）
 - [`multi_agent_design.md`](./multi_agent_design.md)：`setting.json` 的
-  `provider` 字段引用本文档的 Provider 名称；`yzrws start` 启动时按回退链查找
+  `provider` 字段引用本文档的 Provider 名称；`yzrws workitem start` 启动时按回退链查找
 - [`workitem_create_design.md`](./workitem_create_design.md)：创建工作项时
   `provider` 为 `null`，运行时按 `provider_design.md §回退链` 解析
 
 ## 配置 workitem
 
-管理 workitem 级别的配置（主要是 Provider / model 绑定）。命令集：
+管理 workitem 级别的配置（创建 / Provider / model 绑定 / session 等）。命令集：
 
+- `create <name> [--engine <engine>] [--start]`：在 workspace 下创建一个新的工作项；
+  详见 [§创建 workitem](#创建-workitem)
 - `set-model <name> --provider <name>`：把 workitem 绑定到 workspace 中已配置的某个 Provider
 - `unset-model <name>`：解除绑定，恢复继承 workspace 默认
 - `show <name>`：展示 workitem 完整配置与按回退链解析后的生效模型
@@ -734,7 +737,7 @@ yzrws workitem show <name>
 
   [设置] setting.json.provider = 'anthropic'
 
-生效配置（启动时由 yzrws start 加载）：
+生效配置（启动时由 yzrws workitem start 加载）：
   - model       ：claude-sonnet-4-6
   - base_url    ：https://api.anthropic.com
   - agent_types ：claude-code, opencode
@@ -753,7 +756,7 @@ yzrws workitem show <name>
 
 可执行以下操作之一：
   1. 切换 workitem 的 engine 后重试：
-     yzrws start my-task --engine <compatible-engine>
+     yzrws workitem start my-task --engine <compatible-engine>
   2. 选择一个兼容的 provider：
      yzrws workitem set-model my-task --provider <other>
   3. 修改该 provider 的 agent_types（先 unset-model，再 model provider add 覆盖）
@@ -768,7 +771,7 @@ yzrws workitem show <name>
 
   [清除] setting.json.provider = null
 
-下次 yzrws start 将回退到 workspace provider.json 的 default；
+下次 yzrws workitem start 将回退到 workspace provider.json 的 default；
 若 workspace 也无 default，则使用引擎内置默认。
 
 === 清除成功 ===
@@ -829,22 +832,22 @@ setting.json（原始）：
 - **修改字段**：`set-model` 只写 `setting.json.provider`；`model` 字段保持不变
   （与 `provider_design.md §回退链` 一致——workitem `model` 不允许单独覆盖）
 - **原子写**：`setting.json` 通过 `workspace.atomic_write_json` 写入
-- **前置检查**：复用 `commands/create.py` 的 `_check_workspace_initialized` 风格；
+- **前置检查**：复用 `commands/_workspace_check.py::is_workspace_initialized` 风格；
   workitem 存在性通过检查 `<name>/workitem.json` 文件判断
 - **回退链解析**：`yzrws workitem show` 调用 `provider.resolve_model_config`，
-  返回 `ResolvedModel`；`yzrws start` 同样调用该函数
+  返回 `ResolvedModel`；`yzrws workitem start` 同样调用该函数
 - **set-model 不级联到 start**：仅修改 `setting.json`；`session.json` 的 model /
-  provider 字段在下次 `yzrws start` 时才被刷新
+  provider 字段在下次 `yzrws workitem start` 时才被刷新
 - **engine 兼容性检查**：`set-model` 选中 provider 时若 `provider.agent_types`
   不包含 workitem 当前 `setting.json.engine` 则报错退出码 1
-  （防止把"OpenAI 兼容网关"绑到 claude-code 引擎上）。`yzrws start` 在
+  （防止把"OpenAI 兼容网关"绑到 claude-code 引擎上）。`yzrws workitem start` 在
   临时 `--engine` 切换到不兼容引擎时仅打印 WARN 不阻止——给用户"显式尝试"的余地
 
 ### 相关文档
 
 - [`provider_design.md`](./provider_design.md)：§回退链 详细说明 Provider 查找顺序
   与 `default` 字段的作用
-- [`command_design.md`](./command_design.md) §打开 workitem：`yzrws start` 启动时
+- [`command_design.md`](./command_design.md) §打开 workitem：`yzrws workitem start` 启动时
   按回退链加载 model / base_url / auth_key 并注入到引擎
 - [`multi_agent_design.md`](./multi_agent_design.md)：引擎适配器如何消费
   `ResolvedModel`（Claude Code 注入 `ANTHROPIC_*` 环境变量；OpenCode 写入
@@ -920,8 +923,8 @@ NAME               TITLE                  ENGINE       UPDATED
 
 当前 current 指针：（未设置）
 
-提示：执行 yzrws start <workitem> 创建 default session
-      或 yzrws start <workitem> --session <name> 指定 session 名
+提示：执行 yzrws workitem start <workitem> 创建 default session
+      或 yzrws workitem start <workitem> --session <name> 指定 session 名
 ```
 
 `show` 正常：
@@ -978,7 +981,7 @@ Session：default
 Session：explore-outline
 
   [警告] 即将删除 session 'explore-outline'
-  [警告] 该 session 是当前 current 指针，删除后下次 yzrws start 将创建 default
+  [警告] 该 session 是当前 current 指针，删除后下次 yzrws workitem start 将创建 default
 确认删除？[y/N]: === 删除 Session ===
 
 工作项：my-task
@@ -987,7 +990,7 @@ Session：explore-outline
   [删除] sessions/explore-outline.json
   [警告] 该 session 是当前 current 指针，已清空
 
-下次 yzrws start 将创建 default session。
+下次 yzrws workitem start 将创建 default session。
 
 === 删除成功 ===
 ```
@@ -1045,7 +1048,7 @@ session 名不合法：
 - **删除不改引擎原生数据**：`delete_session_by_name` 只删 `yzrws` 层的
   `sessions/<name>.json`；引擎在 `~/.claude/projects/` 等的 session 文件
   保留（用户可手动清理）
-- **与 start 协作**：`yzrws start` 不带 `--session` 时读 current 指针；
+- **与 start 协作**：`yzrws workitem start` 不带 `--session` 时读 current 指针；
   带 `--session <name>` 时切换 current；详见 §打开 workitem / [`session_design.md`](./session_design.md)
 
 ### 相关文档

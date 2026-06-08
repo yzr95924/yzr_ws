@@ -31,7 +31,7 @@ yzrws 端不实现 OAuth 流程——只支持"在 Outline 后台生成 API key"
 **期望行为**：通过 `yzrws outline add` 交互式输入 Outline 实例 URL
 （如 `https://<subdomain>.getoutline.com`）与 API key，
 写入 `<workspace>/.config/outline.json`；之后所有引用该配置的工作项
-在 `yzrws start` 时自动加载 Outline MCP。
+在 `yzrws workitem start` 时自动加载 Outline MCP。
 
 **困难与挑战**：
 
@@ -49,7 +49,7 @@ yzrws 端不实现 OAuth 流程——只支持"在 Outline 后台生成 API key"
 **触发条件**：用户在某 workitem 的 `setting.json` 中将 `outline` 字段
 设为 `"default"`，或运行 `yzrws workitem set-outline <name>`。
 
-**期望行为**：`yzrws start <name>` 启动前，yzrws 读取
+**期望行为**：`yzrws workitem start <name>` 启动前，yzrws 读取
 `<workspace>/.config/outline.json`，把 `(endpoint, auth_token)`
 注入到对应引擎的原生 MCP 配置位置（Claude Code 的 `.mcp.json` /
 OpenCode 的 `opencode.json` 的 `mcp` 字段），Code Agent 启动后即可调用
@@ -68,7 +68,7 @@ Outline 提供的 MCP 工具。
 **触发条件**：workitem 的 `setting.json` 中 `outline` 字段为 `null`
 或字段缺失。
 
-**期望行为**：`yzrws start` 启动前不生成任何 MCP 桥接文件，
+**期望行为**：`yzrws workitem start` 启动前不生成任何 MCP 桥接文件，
 引擎按"未配置 Outline MCP"行为启动。
 
 **困难与挑战**：
@@ -85,7 +85,7 @@ Outline 实例（自托管域名变更）。
 
 **期望行为**：`yzrws outline update [--endpoint ...] [--auth-token ...]`
 对 `<workspace>/.config/outline.json` 做原地更新；
-下次 `yzrws start` 即生效（无需重建 workitem）。
+下次 `yzrws workitem start` 即生效（无需重建 workitem）。
 
 **困难与挑战**：
 
@@ -112,7 +112,7 @@ Outline 实例（自托管域名变更）。
 ### 场景六：引擎切换时的 MCP 重写
 
 **触发条件**：workitem 在不同会话中切换 `engine`（如
-`yzrws start my-task --engine opencode`，而 `setting.json.engine`
+`yzrws workitem start my-task --engine opencode`，而 `setting.json.engine`
 原本是 `claude-code`）。
 
 **期望行为**：启动时按**当前生效**的引擎重新生成 MCP 桥接文件；
@@ -376,7 +376,7 @@ yzrws workitem unset-outline <name>               # 清除引用 + 只读模式
   [设置] setting.json.outline = 'default'
   [设置] setting.json.outline_read_only = true
 
-下次 yzrws start my-task 将自动加载 Outline MCP（只读）。
+下次 yzrws workitem start my-task 将自动加载 Outline MCP（只读）。
 
 === 设置成功 ===
 ```
@@ -390,12 +390,12 @@ yzrws workitem unset-outline <name>               # 清除引用 + 只读模式
 
   [清除] setting.json.outline_read_only = false
 
-Outline MCP 引用保持不变（'default'），下次 yzrws start 将以读写模式加载。
+Outline MCP 引用保持不变（'default'），下次 yzrws workitem start 将以读写模式加载。
 
 === 清除成功 ===
 ```
 
-`yzrws start` 输出（只读模式）：
+`yzrws workitem start` 输出（只读模式）：
 
 ```text
 工作项：my-task
@@ -457,7 +457,7 @@ class AgentEngine(ABC):
         """
 ```
 
-`yzrws start` 在调用 `sync_rules()` 之后、`start()` 之前调用 `sync_mcp()`；
+`yzrws workitem start` 在调用 `sync_rules()` 之后、`start()` 之前调用 `sync_mcp()`；
 mcp_config 由 yzrws 从 `<workspace>/.config/outline.json` + workitem
 `outline` 字段解析得到。
 
@@ -542,7 +542,7 @@ OpenCode 通过 `<workitem>/opencode.json` 的 `mcp` 字段配置 MCP server
 
 ### 引擎切换时的清理
 
-`yzrws start --engine <engine>` 触发引擎切换时，归档旧 session 之后、
+`yzrws workitem start --engine <engine>` 触发引擎切换时，归档旧 session 之后、
 写入新引擎桥接文件之前，旧引擎的 MCP 桥接文件按以下规则处理：
 
 | 旧引擎 | 新引擎 | 处理 |
@@ -552,10 +552,10 @@ OpenCode 通过 `<workitem>/opencode.json` 的 `mcp` 字段配置 MCP server
 
 ## 启动集成
 
-`yzrws start` 启动流程在原 5 步基础上插入 `sync_mcp()` 步骤：
+`yzrws workitem start` 启动流程在原 5 步基础上插入 `sync_mcp()` 步骤：
 
 ```text
-yzrws start <workitem_name>
+yzrws workitem start <workitem_name>
   │
   ├── 1. 读取 <workitem>/setting.json，确定引擎
   ├── 2. 读取 <workitem>/session.json（如果有）
@@ -685,7 +685,7 @@ yzrws outline remove
     - api-refactor
     - doc-restructure
 
-  这些工作项下次 yzrws start 时会打印 WARN（outline 配置缺失），
+  这些工作项下次 yzrws workitem start 时会打印 WARN（outline 配置缺失），
   仍可正常启动但不会加载 Outline MCP。
   如需显式关闭，可执行：
     yzrws workitem unset-outline api-refactor
@@ -728,7 +728,7 @@ yzrws workitem unset-outline-readonly <name>       # 仅关闭只读（保留引
   [设置] setting.json.outline = 'default'
   [设置] setting.json.outline_read_only = false
 
-下次 yzrws start my-task 将自动加载 Outline MCP（读写）。
+下次 yzrws workitem start my-task 将自动加载 Outline MCP（读写）。
 
 === 设置成功 ===
 ```
@@ -745,7 +745,7 @@ yzrws workitem unset-outline-readonly <name>       # 仅关闭只读（保留引
   [设置] setting.json.outline = 'default'
   [设置] setting.json.outline_read_only = true
 
-下次 yzrws start my-task 将自动加载 Outline MCP（只读）。
+下次 yzrws workitem start my-task 将自动加载 Outline MCP（只读）。
 
 === 设置成功 ===
 ```
@@ -759,7 +759,7 @@ yzrws workitem unset-outline-readonly <name>       # 仅关闭只读（保留引
 
   [清除] setting.json.outline = null
 
-下次 yzrws start my-task 不再加载 Outline MCP。
+下次 yzrws workitem start my-task 不再加载 Outline MCP。
 
 === 清除成功 ===
 ```
@@ -773,7 +773,7 @@ yzrws workitem unset-outline-readonly <name>       # 仅关闭只读（保留引
 
   [清除] setting.json.outline_read_only = false
 
-Outline MCP 引用保持不变（'default'），下次 yzrws start 将以读写模式加载。
+Outline MCP 引用保持不变（'default'），下次 yzrws workitem start 将以读写模式加载。
 
 === 清除成功 ===
 ```

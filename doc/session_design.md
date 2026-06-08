@@ -53,7 +53,7 @@ session 列表"分开。
 
 | 状态 | 含义 | 进入条件 |
 | --- | --- | --- |
-| `active` | 会话正在进行 | `yzrws start` 启动 / `--session` 恢复 |
+| `active` | 会话正在进行 | `yzrws workitem start` 启动 / `--session` 恢复 |
 | `paused` | 会话已暂停，可恢复 | Agent 正常退出 / 用户手动暂停 |
 | `completed` | 会话已完成 | 用户标记完成 / Agent 报告任务结束 |
 | `archived` | 会话已归档 | 引擎切换自动触发，写入 `_archive_*` |
@@ -155,10 +155,10 @@ class OpenCodeEngine(AgentEngine):
 
 ## Session 生命周期
 
-### 启动新会话（yzrws start workitem）
+### 启动新会话（yzrws workitem start）
 
 ```text
-yzrws start <workitem> [--session <name>] [--title "<text>"]
+yzrws workitem start <workitem> [--session <name>] [--title "<text>"]
   │
   ├── 1. 读 setting.json，确定 engine_name
   ├── 2. ★ 迁移旧格式（migrate_legacy_session，幂等）
@@ -224,14 +224,14 @@ Agent 退出后，适配器根据退出码更新 status：
 | `yzrws workitem session show <workitem> <session>` | 显示 session 详情 |
 | `yzrws workitem session remove <workitem> <session> [-y]` | 删除 session 元数据；删 current 时清空指针 |
 | `yzrws workitem session use <workitem> <session>` | 切换 current 指针 |
-| `yzrws start <workitem> --session <name> [--title "..."]` | start 时指定 session |
+| `yzrws workitem start <workitem> --session <name> [--title "..."]` | start 时指定 session |
 
 ## 迁移兼容
 
 旧格式（单 session）到新格式（多 session）的迁移函数
 `migrate_legacy_session(workitem_dir)` 幂等，自动在以下入口触发：
 
-- `yzrws start <workitem>` 入口
+- `yzrws workitem start <workitem>` 入口
 - `yzrws workitem session *` 任意子命令入口（在 `_precheck_session_target` 中）
 
 迁移规则：

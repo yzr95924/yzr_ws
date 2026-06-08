@@ -1,8 +1,8 @@
 """workitem 创建流程的公共 helper。
 
-从原 commands/create.py 提取；create 与 start 共享。
-原 create.py 是唯一来源，2026-06 重构时把"创建工作项"流程的纯函数 / 常量
-提到独立模块，去掉 `_` 前缀作为公共 API。
+从原 commands/create.py 提取（2026-06 重构时该文件已合并到
+commands/workitem.py 下的 `workitem create` 子命令）；helper 现在被
+workitem create 与 start 共享。
 """
 
 from __future__ import annotations

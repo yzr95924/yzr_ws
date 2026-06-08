@@ -1,7 +1,7 @@
 #compdef yzrws
 # zsh completion for yzrws
 #
-# 支持顶层命令 + 二级 / 三级子命令（create workitem / model provider add / 等）
+# 支持顶层命令 + 二级 / 三级子命令（workitem create / model provider add / 等）
 # 的 Tab 补全。workitem 名、provider 名、引擎名等动态值在补全时实时从
 # workspace 目录与 provider.json 读取——无需 yzrws 自身暴露额外接口。
 #
@@ -17,7 +17,7 @@
 #     受的 flag 被子命令继承"这种越界组合
 #   - case $words[1] 分发到具体 leaf，unknown subcmd 落到默认空补全
 #   - value-taking flag 在 _arguments 同一行内用 "name[desc]:msg:action"
-#     形式声明，zsh 自动处理：yzrws start --engine e <name> 不会把
+#     形式声明，zsh 自动处理：yzrws workitem start --engine e <name> 不会把
 #     "e" 误计为 workitem 名
 
 # ==================================================================
@@ -87,9 +87,7 @@ _yzrws_commands() {
     local -a cmds
     cmds=(
         'init:初始化 workspace 目录结构'
-        'create:创建工作项等资源'
         'list:列举所有工作项及其元数据'
-        'start:打开工作项并启动 Agent 会话'
         'model:管理模型与 Provider 配置'
         'workitem:管理 workitem 级别配置'
         'outline:管理 Outline Wiki MCP 配置'
@@ -100,14 +98,6 @@ _yzrws_commands() {
 # ==================================================================
 # 二级子命令定义
 # ==================================================================
-
-_yzrws_create_subcmds() {
-    local -a subs
-    subs=(
-        'workitem:创建一个新的工作项'
-    )
-    _describe 'subcommand' subs
-}
 
 _yzrws_model_subcmds() {
     local -a subs
@@ -131,13 +121,27 @@ _yzrws_model_provider_subcmds() {
 _yzrws_workitem_subcmds() {
     local -a subs
     subs=(
+        'create:创建一个新的工作项'
+        'start:打开工作项并启动 Agent 会话'
         'set-model:把 workitem 绑定到某个 Provider'
         'unset-model:解除 workitem 的 Provider 绑定'
         'show:展示 workitem 完整配置与生效模型'
         'set-outline:为 workitem 启用 Outline MCP'
         'unset-outline:解除 workitem 的 Outline MCP 引用'
+        'session:管理 workitem 下的多 session'
     )
     _describe 'subcommand' subs
+}
+
+_yzrws_workitem_session_subcmds() {
+    local -a subs
+    subs=(
+        'list:列出 workitem 下所有 session'
+        'show:显示 session 详情'
+        'remove:删除 session（仅 yzrws 元数据）'
+        'use:切换 current 指针'
+    )
+    _describe 'session subcommand' subs
 }
 
 _yzrws_outline_subcmds() {
@@ -155,19 +159,72 @@ _yzrws_outline_subcmds() {
 # 叶子节点 options 定义
 # ==================================================================
 
-# yzrws create workitem <name> [--engine <e>] [--start]
-_yzrws_create_workitem() {
-    _arguments -s \
-        '1:workitem name:' \
-        '--engine[指定 Agent 引擎（覆盖全局默认）]:engine:_yzrws_engines' \
-        '--start[创建完成后自动执行 yzrws start]'
-}
-
-# yzrws start <name> [--engine <e>]
-_yzrws_start() {
+# yzrws workitem start <name> [--engine <e>] [--session <s>] [--title "<text>"]
+_yzrws_workitem_start() {
     _arguments -s \
         '1:workitem name:_yzrws_workitems' \
-        '(--engine -e)'{--engine,-e}'[指定引擎（创建或切换时使用）]:engine:_yzrws_engines'
+        '(--engine -e)'{--engine,-e}'[指定引擎（创建或切换时使用）]:engine:_yzrws_engines' \
+        '(--session -s)'{--session,-s}'[指定要恢复/创建的 session 名]:session:_yzrws_sessions_for_wi_at 4' \
+        '(--title -t)'{--title,-t}'[新建 session 时设置 title]:title:'
+}
+
+# 列出指定 workitem 下的"用户命名 session"（排除 _archive_*），
+# 用于 yzrws workitem start --session / yzrws workitem session show/remove/use 的值补全。
+# 调用时传入 workitem 在 $words 中的位置编号：
+#   - 4 = yzrws workitem start <wi> --session <cur>
+#   - 5 = yzrws workitem session <sub> <wi> <cur>
+_yzrws_sessions_for_wi_at() {
+    local pos=$1
+    local wi="${words[$pos]}"
+    [[ -n "$wi" ]] || return 0
+    local ws sessions_dir
+    ws="$(_yzrws_workspace_path)"
+    sessions_dir="$ws/$wi/sessions"
+    [[ -d "$sessions_dir" ]] || return 0
+    python3 - "$sessions_dir" <<'PYEOF' 2>/dev/null
+import os, sys
+d = sys.argv[1]
+try:
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json") or fn.startswith("_"):
+            continue
+        print(fn[:-5])
+except OSError:
+    sys.exit(0)
+PYEOF
+}
+
+# yzrws workitem session list <workitem>
+_yzrws_workitem_session_list() {
+    _arguments -s \
+        '1:workitem name:_yzrws_workitems'
+}
+
+# yzrws workitem session <show|remove|use> <workitem> <session> [-y]
+_yzrws_workitem_session_with_session() {
+    _arguments -s \
+        '1:workitem name:_yzrws_workitems' \
+        '2:session:_yzrws_sessions_for_wi_at 5' \
+        '(--yes -y)'{--yes,-y}'[跳过确认直接删除]'
+}
+
+# yzrws workitem session → 三级 dispatch
+_yzrws_workitem_session() {
+    local curcontext="$curcontext" state state_descr line
+    _arguments -C \
+        '1: :->subcmd' \
+        '*:: :->args'
+    case $state in
+        subcmd)
+            _yzrws_workitem_session_subcmds
+            ;;
+        args)
+            case $words[1] in
+                list) _yzrws_workitem_session_list ;;
+                show|remove|use) _yzrws_workitem_session_with_session ;;
+            esac
+            ;;
+    esac
 }
 
 # yzrws model provider add
@@ -228,6 +285,14 @@ _yzrws_workitem_set_model() {
         '--provider[Provider 名称（必须已配置）]:provider:_yzrws_providers'
 }
 
+# yzrws workitem create <name> [--engine <e>] [--start]
+_yzrws_workitem_create() {
+    _arguments -s \
+        '1:workitem name:' \
+        '--engine[指定 Agent 引擎（覆盖全局默认）]:engine:_yzrws_engines' \
+        '--start[创建完成后自动执行 yzrws workitem start]'
+}
+
 # yzrws workitem {unset-model|show|set-outline|unset-outline} <name>
 _yzrws_workitem_with_name() {
     _arguments -s \
@@ -246,8 +311,11 @@ _yzrws_workitem() {
             ;;
         args)
             case $words[1] in
+                create) _yzrws_workitem_create ;;
+                start) _yzrws_workitem_start ;;
                 set-model) _yzrws_workitem_set_model ;;
                 unset-model|show|set-outline|unset-outline) _yzrws_workitem_with_name ;;
+                session) _yzrws_workitem_session ;;
             esac
             ;;
     esac
@@ -301,24 +369,6 @@ _yzrws_outline() {
     esac
 }
 
-# yzrws create → 二级 dispatch
-_yzrws_create() {
-    local curcontext="$curcontext" state state_descr line
-    _arguments -C \
-        '1: :->subcmd' \
-        '*:: :->args'
-    case $state in
-        subcmd)
-            _yzrws_create_subcmds
-            ;;
-        args)
-            case $words[1] in
-                workitem) _yzrws_create_workitem ;;
-            esac
-            ;;
-    esac
-}
-
 # yzrws init / yzrws list  无子命令、无 flag
 _yzrws_no_subcmd() {
     _arguments -s
@@ -340,8 +390,6 @@ _yzrws() {
         args)
             case $words[1] in
                 init|list) _yzrws_no_subcmd ;;
-                create) _yzrws_create ;;
-                start) _yzrws_start ;;
                 model) _yzrws_model ;;
                 workitem) _yzrws_workitem ;;
                 outline) _yzrws_outline ;;

@@ -1,6 +1,10 @@
 """yzrws workitem 命令：workitem 级别的配置子命令组。
 
 子命令：
+  - workitem create <name> [--engine <engine>] [--start]
+                                                  创建一个新的工作项
+  - workitem start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
+                                                  打开工作项并启动 Agent 会话
   - workitem set-model <name> --provider <name>  绑定一个 workspace Provider
   - workitem unset-model <name>                  解除绑定（恢复继承）
   - workitem show <name>                         展示 workitem 完整配置与生效模型
@@ -9,31 +13,48 @@
   - workitem unset-outline-readonly <name>       关闭 Outline 只读模式
   - workitem session <list|show|remove|use>      管理多 session
 
-设计参考 doc/command_design.md §配置 workitem / §管理 session 与
-doc/provider_design.md §回退链 / doc/session_design.md。
+设计参考 doc/command_design.md §配置 workitem / §管理 session / §打开 workitem
+与 doc/provider_design.md §回退链 / doc/session_design.md /
+doc/workitem_create_design.md。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from yzrws import paths
 from yzrws.commands import REGISTRY
+from yzrws.commands._create_workitem import (
+    check_path_exists,
+    create_directories,
+    resolve_engine,
+    update_metadata,
+    write_initial_files,
+)
 from yzrws.commands._name import (
     is_valid_session_name,
     is_valid_workitem_name,
 )
 from yzrws.commands._workspace_check import is_workspace_initialized
+from yzrws.engine import get_engine
 from yzrws.output import (
     STATUS_ERROR,
     STATUS_WARN,
     _display_width,
     print_banner,
+    print_create_footer,
+    print_create_item,
+    print_create_report_header,
     print_failure,
+    print_metadata_update,
     print_provider_incompatible_for_engine,
     print_provider_not_found_for_set_model,
+    print_session_engine_mismatch,
     print_session_list_empty,
     print_session_list_footer,
     print_session_list_header,
@@ -45,29 +66,36 @@ from yzrws.output import (
     print_session_show,
     print_session_use_changed,
     print_workspace_not_initialized,
+    print_workitem_exists,
+    print_workitem_name_invalid,
     print_workitem_not_found,
     print_workitem_set_model,
     print_workitem_show_header,
     print_workitem_show_section,
     print_workitem_unset_model,
 )
+from yzrws.outline import resolve_mcp_config
 from yzrws.provider import (
     ProviderConfigError,
+    get_workspace_provider_path,
     load_config,
     resolve_model_config,
 )
 from yzrws.session import (
+    SessionInfo,
     delete_session_by_name,
+    find_latest_session_for_engine,
     get_current_session_name,
     list_sessions,
     migrate_legacy_session,
     read_session_by_name,
     set_current_session_name,
+    write_session,
 )
 from yzrws.workspace import atomic_write_json
 
 # 顶层 --help 显示的简短描述
-HELP = "管理 workitem 级别的配置（模型 / Provider 绑定 / session 等）"
+HELP = "管理 workitem（创建 / 模型 / Provider 绑定 / session 等）"
 
 
 def run(args: argparse.Namespace) -> int:
@@ -112,6 +140,50 @@ def _build_parser() -> argparse.ArgumentParser:
         title="子命令",
         metavar="<subcmd>",
     )
+
+    # ---- workitem create ----
+    create_p = subparsers.add_parser(
+        "create",
+        help="创建一个新的工作项",
+    )
+    create_p.add_argument("name", help="工作项名称")
+    create_p.add_argument(
+        "--engine",
+        default=None,
+        help="指定 Agent 引擎（覆盖全局默认值）",
+    )
+    create_p.add_argument(
+        "--start",
+        action="store_true",
+        help="创建完成后自动执行 yzrws workitem start",
+    )
+    create_p.set_defaults(func=run_create)
+
+    # ---- workitem start ----
+    start_p = subparsers.add_parser(
+        "start",
+        help="打开工作项并启动 Agent 会话",
+    )
+    start_p.add_argument("name", help="工作项名称")
+    start_p.add_argument(
+        "--engine",
+        "-e",
+        default=None,
+        help="指定引擎（创建或切换时使用）",
+    )
+    start_p.add_argument(
+        "--session",
+        "-s",
+        default=None,
+        help="指定要恢复/创建的 session 名（缺省 = current 指针或 'default'）",
+    )
+    start_p.add_argument(
+        "--title",
+        "-t",
+        default=None,
+        help="新建 session 时设置 title；已存在 session 忽略",
+    )
+    start_p.set_defaults(func=run_start)
 
     # ---- workitem set-model ----
     set_p = subparsers.add_parser(
@@ -249,6 +321,373 @@ def _read_setting(target: Path) -> dict | None:
     if not isinstance(data, dict):
         return None
     return data
+
+
+# ==================================================================
+# yzrws workitem create
+# ==================================================================
+
+
+def run_create(args: argparse.Namespace) -> int:
+    """实现 `yzrws workitem create <name> [--engine <engine>] [--start]`。
+
+    流程（对齐 doc/workitem_create_design.md §创建流程）：
+      1. 前置检查（workspace 初始化 / 名称合法性 / 路径冲突）
+      2. 创建目录结构
+      3. 写入初始文件（workitem.json / setting.json / CLAUDE.md）
+      4. 更新 workspace 级 metadata.json
+      5. 输出创建报告
+      6. 可选串联启动（--start）
+    """
+    workspace_path = paths.get_workspace_path()
+    name = args.name
+
+    # 1. 前置检查
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return 1
+
+    if not is_valid_workitem_name(name):
+        print_workitem_name_invalid(name)
+        return 1
+
+    target = workspace_path / name
+    exists_result = check_path_exists(target, name, workspace_path)
+    if exists_result is not None:
+        # 目录已存在 → 幂等回显；文件已存在 → 报错
+        if exists_result == "directory":
+            print_workitem_exists(name, workspace_path)
+            return 0
+        # 同名文件占用
+        print(f"[{STATUS_ERROR}] 路径已被文件占用：{target}")
+        return 1
+
+    # 解析引擎
+    engine = resolve_engine(args.engine)
+
+    # 打印报告头部
+    print_create_report_header(name, workspace_path, engine)
+
+    # 2. 创建目录结构
+    created_items = create_directories(target, name)
+
+    # 3. 写入初始文件
+    file_items = write_initial_files(target, name, engine)
+    created_items.extend(file_items)
+
+    # 4. 更新 workspace 元数据
+    count_before, count_after = update_metadata(workspace_path, name)
+
+    # 5. 打印创建清单（目录和文件在前，元数据更新在后）
+    for action, item in created_items:
+        print_create_item(action, item)
+    print_metadata_update(count_before, count_after)
+
+    # 打印底部成功信息
+    print_create_footer(name)
+
+    # 6. 可选：串联启动
+    if args.start:
+        return _auto_start(name)
+
+    return 0
+
+
+def _auto_start(name: str) -> int:
+    """创建完成后自动执行 yzrws workitem start <name>。
+
+    通过 subprocess 调用 yzrws workitem start，保持进程语义一致。
+    如果 yzrws 不在 PATH 上，输出提示信息并返回 0（创建本身已成功）。
+    """
+    yzrws_cmd = shutil.which("yzrws")
+    if yzrws_cmd is None:
+        print("注意：yzrws 未在 PATH 中找到，跳过自动启动。")
+        print(f"请手动执行：yzrws workitem start {name}")
+        return 0
+
+    result = subprocess.run(
+        [yzrws_cmd, "workitem", "start", name],
+        check=False,
+    )
+    return result.returncode
+
+
+# ==================================================================
+# yzrws workitem start
+# ==================================================================
+
+
+def run_start(args: argparse.Namespace) -> int:
+    """实现 ``yzrws workitem start <name>``，返回进程退出码。
+
+    场景分支（对齐 doc/session_design.md §Session 生命周期）：
+
+      - current 为空 + 无 --session：创建 ``default``（title 缺省）
+      - current = "x" + 无 --session：续命 x
+      - --session "y"（与 current 不同）：切 current → y；y 存在则续命，不存在则创建
+      - --session "y" + --engine 与 y.engine 不一致：error（避免归档 X 的歧义）
+    """
+    name = args.name
+    cli_engine = args.engine
+    cli_session_name = args.session
+    cli_title = args.title
+
+    workspace_path = paths.get_workspace_path()
+
+    # 1. 前置检查
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return 1
+
+    if not is_valid_workitem_name(name):
+        print_workitem_name_invalid(name)
+        return 1
+
+    target = workspace_path / name
+
+    # 2. workitem 不存在 → 自动创建
+    exists_result = check_path_exists(target, name, workspace_path)
+    if exists_result == "file":
+        print(f"[{STATUS_ERROR}] 路径已被文件占用：{target}")
+        return 1
+
+    if exists_result is None:
+        if not _auto_create_workitem(workspace_path, name, cli_engine):
+            return 1
+
+    # 3. 读 setting.json
+    setting_path = target / "setting.json"
+    if not setting_path.is_file():
+        print(f"[{STATUS_ERROR}] 缺少 setting.json：{setting_path}")
+        return 1
+
+    try:
+        setting = json.loads(setting_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[{STATUS_ERROR}] 读取 setting.json 失败：{e}")
+        return 1
+
+    engine_name = setting.get("engine", "claude-code")
+
+    # --engine 切换
+    if cli_engine and cli_engine != engine_name:
+        setting["engine"] = cli_engine
+        engine_name = cli_engine
+        atomic_write_json(setting_path, setting)
+        print(f"引擎已切换为：{engine_name}")
+
+    # 3.5 解析生效的模型配置
+    try:
+        provider_config = load_config(get_workspace_provider_path(workspace_path))
+    except ProviderConfigError as e:
+        print(f"[{STATUS_ERROR}] 读取 provider.json 失败：{e}")
+        return 1
+    from yzrws.engine import list_engines
+
+    try:
+        resolved_model = resolve_model_config(setting, provider_config, list_engines())
+    except KeyError as e:
+        print(
+            f"[{STATUS_ERROR}] workitem 引用了不存在的 Provider {e.args[0]!r}；"
+            "请执行 yzrws workitem unset-model 或 yzrws workitem set-model 重设"
+        )
+        return 1
+
+    if (
+        resolved_model.source != "none"
+        and resolved_model.agent_types
+        and engine_name not in resolved_model.agent_types
+    ):
+        compatible = ", ".join(resolved_model.agent_types)
+        print(
+            f"[{STATUS_WARN}] 当前 engine {engine_name!r} 与"
+            f" provider {resolved_model.provider_name!r} 不兼容："
+            f"该 provider 仅支持 {compatible}"
+        )
+        print(
+            f"  提示：执行 yzrws workitem start {name} --engine <compatible-engine>"
+            " 切换到兼容的 engine，或 yzrws workitem unset-model 解除绑定"
+        )
+        print()
+
+    # 3.6 解析 Outline MCP 配置
+    mcp_config = resolve_mcp_config(setting, workspace_path)
+    outline_read_only = bool(setting.get("outline_read_only", False))
+
+    # 4. 引擎就绪检查
+    try:
+        engine = get_engine(engine_name)
+    except ValueError as e:
+        print(f"[{STATUS_ERROR}] {e}")
+        return 1
+
+    if not engine.is_available():
+        print(f"[{STATUS_ERROR}] 引擎 {engine_name} 不可用")
+        print(f"请确保 {engine._get_command()} 命令已安装并在 PATH 中")
+        return 1
+
+    # 5. ★ 多 session 决策
+    # 5.1 旧格式迁移（幂等）
+    migrate_legacy_session(target)
+
+    # 5.2 决定 target session 名
+    if cli_session_name is not None:
+        if not is_valid_session_name(cli_session_name):
+            print(f"[{STATUS_ERROR}] --session 名不合法：{cli_session_name!r}")
+            print()
+            print("命名规则：1-32 字符，小写字母/数字开头，可含 -_")
+            return 1
+        target_session_name: str = cli_session_name
+    else:
+        current_name = get_current_session_name(target)
+        target_session_name = current_name if current_name is not None else "default"
+
+    # 5.3 读 target session（可能不存在 = 新建场景）
+    target_session = read_session_by_name(target, target_session_name)
+
+    # 5.4 引擎冲突检测
+    if target_session is not None and target_session.engine != engine_name:
+        print_session_engine_mismatch(
+            workitem_name=name,
+            session_name=target_session.name,
+            session_engine=target_session.engine,
+            requested_engine=engine_name,
+        )
+        return 1
+
+    # 7. 确定是否恢复会话
+    session_to_resume: SessionInfo | None = None
+    if target_session is not None and target_session.session_id:
+        if engine.validate_session(target_session.session_id):
+            session_to_resume = target_session
+        else:
+            print(f"警告：记录的 session {target_session.session_id} 已不存在")
+            target_session = None
+    elif target_session is None and cli_session_name is None:
+        # 用户没显式指定 session 时，尝试从归档恢复（首次自动创建时
+        # 也许上一轮引擎切换留了归档）
+        history = find_latest_session_for_engine(target, engine_name)
+        if (
+            history
+            and history.session_id
+            and engine.validate_session(history.session_id)
+        ):
+            session_to_resume = history
+            print(f"发现历史 {engine_name} 会话：{history.session_id}")
+
+    # 7.5 同步 MCP 配置
+    engine.sync_mcp(target, mcp_config, read_only=outline_read_only)
+
+    # 8. 启动引擎
+    print_banner("启动会话")
+    print()
+    print(f"工作项：{name}")
+    print(f"路径：{target}")
+    print(f"引擎：{engine_name}")
+    print(
+        f"Session：{target_session_name}{'  [续命]' if session_to_resume else '  [新建]'}"
+    )
+    if resolved_model.source != "none":
+        print(f"模型：{resolved_model.model}（来自 {resolved_model.provider_name}）")
+    if mcp_config:
+        mode = "只读" if outline_read_only else "读写"
+        print(f"Outline MCP：已启用（{mode}）")
+    print()
+
+    if session_to_resume:
+        print(f"恢复会话：{session_to_resume.session_id}")
+        print()
+        exit_code = engine.resume(
+            target, session_to_resume.session_id, model=resolved_model
+        )
+        session_id = session_to_resume.session_id
+    else:
+        print("启动新会话")
+        print()
+        exit_code = engine.start(target, model=resolved_model)
+        session_id = engine.extract_session_id(target)
+
+    # 9. 写回 sessions/<name>.json
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+
+    if session_to_resume is not None:
+        # 续命：沿用旧 created_at，刷新 status / updated_at / resume_count
+        # / model / provider；name 不变。
+        session_to_resume.status = "paused"
+        session_to_resume.updated_at = now
+        session_to_resume.resume_count += 1
+        session_to_resume.model = resolved_model.model
+        session_to_resume.provider = resolved_model.provider_name
+        write_session(target, session_to_resume)
+    else:
+        # 新建
+        new_session = SessionInfo(
+            name=target_session_name,
+            engine=engine_name,
+            session_id=session_id or "",
+            status="paused",
+            title=(cli_title or ""),
+            created_at=now,
+            updated_at=now,
+            resume_count=0,
+            model=resolved_model.model,
+            provider=resolved_model.provider_name,
+        )
+        write_session(target, new_session)
+
+    # 10. 更新 current 指针
+    old_current = get_current_session_name(target)
+    if old_current != target_session_name:
+        set_current_session_name(target, target_session_name)
+        if cli_session_name is not None and old_current is not None:
+            print(f"已将 current 切换为：{target_session_name}")
+        elif cli_session_name is not None and old_current is None:
+            print(f"已设置 current：{target_session_name}")
+
+    # 11. 输出结果
+    print()
+    if exit_code == 0:
+        print("会话已正常退出")
+        if session_id:
+            print(f"Session ID：{session_id}")
+    else:
+        print(f"会话异常退出（退出码：{exit_code}）")
+
+    return exit_code
+
+
+def _auto_create_workitem(
+    workspace_path: Path,
+    name: str,
+    engine: str | None,
+) -> bool:
+    """自动创建工作项（yzrws workitem start 在 workitem 不存在时调用）。
+
+    复用 commands/_create_workitem.py 的公共创建逻辑。
+
+    Returns:
+        True 表示创建成功，False 表示失败
+    """
+    target = workspace_path / name
+    resolved_engine = resolve_engine(engine)
+
+    print(f"工作项 {name} 不存在，正在创建...")
+    print()
+
+    print_create_report_header(name, workspace_path, resolved_engine)
+    created_items = create_directories(target, name)
+    file_items = write_initial_files(target, name, resolved_engine)
+    created_items.extend(file_items)
+    count_before, count_after = update_metadata(workspace_path, name)
+    print_metadata_update(count_before, count_after)
+    for action, item in created_items:
+        print_create_item(action, item)
+    print_create_footer(name)
+    print()
+    print("创建工作项完成，继续启动会话...")
+    print()
+
+    return True
 
 
 # ==================================================================
@@ -495,7 +934,7 @@ def run_set_outline(args: argparse.Namespace) -> int:
     print("  [设置] setting.json.outline = 'default'")
     print(f"  [设置] setting.json.outline_read_only = {str(read_only).lower()}")
     print()
-    print(f"下次 yzrws start {name} 将自动加载 Outline MCP（{mode_label}）。")
+    print(f"下次 yzrws workitem start {name} 将自动加载 Outline MCP（{mode_label}）。")
     print()
     print("=== 设置成功 ===")
     return 0
@@ -541,7 +980,7 @@ def run_unset_outline(args: argparse.Namespace) -> int:
     if had_read_only:
         print("  [清除] setting.json.outline_read_only（已同步清除只读模式）")
     print()
-    print(f"下次 yzrws start {name} 不再加载 Outline MCP。")
+    print(f"下次 yzrws workitem start {name} 不再加载 Outline MCP。")
     print()
     print("=== 清除成功 ===")
     return 0
@@ -593,7 +1032,7 @@ def run_unset_outline_readonly(args: argparse.Namespace) -> int:
     if outline_ref:
         print(
             f"Outline MCP 引用保持不变（{outline_ref!r}），"
-            "下次 yzrws start 将以读写模式加载。"
+            "下次 yzrws workitem start 将以读写模式加载。"
         )
     print()
     print("=== 清除成功 ===")
