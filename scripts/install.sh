@@ -149,7 +149,7 @@ else
     # 缺省（SHELL_TARGET 空）：转发 --shell all，一次性装 bash + zsh + fish
     # 显式指定 SHELL_TARGET：仅装该 shell 的补全
     effective_target="${SHELL_TARGET:-all}"
-    echo "[2/2] 安装 shell 补全（shell=$effective_target, dest-base=$DEST_BASE）..."
+    echo "[2/2] 安装 shell 补全（shell=${effective_target}, dest-base=${DEST_BASE}）..."
     echo ""
     "$COMPLETIONS_SCRIPT" --shell "$effective_target" --dest-dir "$DEST_BASE"
 fi

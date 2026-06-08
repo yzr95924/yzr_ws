@@ -40,6 +40,12 @@
 - **参数解析**：`while [[ $# -gt 0 ]]; do case "$1" in ... esac done` 显式解析，
   支持 `-h | --help`，未知参数 `exit 2`
 - **中文注释**：与 `README.md` / `CLAUDE.md` 保持一致；只在 WHY 不显然时写注释
+- **`${VAR}` 显式定界**：`set -u` 脚本中 `$VAR` 后若紧跟 CJK 标点
+  （`）` / `，` / `。` / `；` / `、` 等），必须改用 `${VAR}` 形式。
+  bash 3.2.57 在 `zh_CN.UTF-8` locale 下把 CJK 标点视作 identifier
+  字符，导致变量名"吞掉"标点 → `set -u` 抛 `unbound variable`。
+  `LC_ALL=C` 能绕过但破坏中文输出，**不是**解。
+  典型踩坑与 grep 验证见 `MEMORY.md` 对应条目
 - **可执行权限**：新脚本需 `chmod +x`，仓库内的 `*.sh` 在 git 中均带执行位
 
 > 仓库暂未引入 `shellcheck`（本机环境不一定安装），但所有 `*.sh` 已按

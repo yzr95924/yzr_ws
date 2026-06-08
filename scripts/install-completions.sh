@@ -72,7 +72,7 @@ install_bash() {
             rm -f "$dst"
             echo "[bash] 已删除 $dst"
         else
-            echo "[bash] 未发现已安装的补全（$dst），跳过"
+            echo "[bash] 未发现已安装的补全（${dst}），跳过"
         fi
         return
     fi
@@ -94,7 +94,7 @@ install_zsh() {
             rm -f "$dst"
             echo "[zsh] 已删除 $dst"
         else
-            echo "[zsh] 未发现已安装的补全（$dst），跳过"
+            echo "[zsh] 未发现已安装的补全（${dst}），跳过"
         fi
         return
     fi
@@ -115,7 +115,7 @@ install_fish() {
             rm -f "$dst"
             echo "[fish] 已删除 $dst"
         else
-            echo "[fish] 未发现已安装的补全（$dst），跳过"
+            echo "[fish] 未发现已安装的补全（${dst}），跳过"
         fi
         return
     fi

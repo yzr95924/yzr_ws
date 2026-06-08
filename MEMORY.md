@@ -92,6 +92,23 @@
   若有现成表格 / 流程图 / 错误组合清单，先看是否能"在原结构里加一行 /
   改一个数"——避免另开新节，破坏"单点修改"的可追溯性。
 
+- 写中文 echo 行时，**任何**裸 `$VAR` 后紧跟 CJK 标点（典型如 `）`）都必须改用
+  `${VAR}` 显式定界。
+  **Why:** bash 3.2.57（macOS 系统自带版本）在 `zh_CN.UTF-8` locale 下把
+  CJK 标点视作 identifier 字符，`$DEST_BASE）` 会被当成单一变量名
+  `DEST_BASE）` 查找，`set -u` 立即抛 `unbound variable`；
+  `LC_ALL=C` 能绕过但破坏中文输出，所以不是解。
+  典型踩坑：`install.sh:152` / `uninstall.sh:135` /
+  `install-completions.sh:75/97/118`（2026-06-08 修复）。
+  **How to apply:**
+  1. 新写中文 echo 行时主动扫一遍：`$VAR` 后是否紧跟 `）` / `，` /
+     `。` / `；` / `、` 等 CJK 标点？是 → 改成 `${VAR}`
+  2. 改 / 审已有脚本时跑一次：
+     `grep -rn -E '\$[A-Za-z_][A-Za-z0-9_]*[）]' scripts/ completions/ bin/ src/`
+     命中即修
+  3. 同源问题不限于 `）`——任何 ctype 把 CJK 标点归为 letter 的 locale
+     下都可能出现；防御性地对所有 CJK 标点都用 `${VAR}` 范式
+
 ### reference
 
 <!-- 暂无记录 -->
