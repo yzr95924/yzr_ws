@@ -473,3 +473,252 @@ def print_provider_incompatible_for_engine(
     print(
         "  3. 修改该 provider 的 agent_types（先 unset-model，再 model provider add 覆盖）"
     )
+
+
+# ---- session 管理报告 ----
+
+# 设计参考 doc/session_design.md 与 doc/command_design.md §管理 session。
+
+
+def _format_session_updated(updated_at: str) -> str:
+    """把 ISO 8601 时间戳格式化为 'YYYY-MM-DD HH:MM:SS'；空时返回 '—'。"""
+    if not updated_at:
+        return "—"
+    # ISO 8601 形如 2026-06-08T10:00:00+08:00；按 T 切并取前两段
+    head = updated_at.split("T", 1)
+    if len(head) != 2:
+        return updated_at
+    date_part = head[0]
+    time_part = head[1].split("+", 1)[0].split("-", 1)[0].split("Z", 1)[0]
+    if not time_part:
+        return date_part
+    return f"{date_part} {time_part}"
+
+
+def print_session_list_header(col_widths: dict[str, int]) -> None:
+    """打印 session list 表头与分隔线。列：NAME / TITLE / ENGINE / UPDATED。"""
+    row = "  ".join(
+        _pad(label, col_widths[key])
+        for key, label in [
+            ("name", "NAME"),
+            ("title", "TITLE"),
+            ("engine", "ENGINE"),
+            ("updated", "UPDATED"),
+        ]
+    )
+    print(row)
+    print(
+        "  ".join("-" * col_widths[k] for k in ("name", "title", "engine", "updated"))
+    )
+
+
+def print_session_list_row(
+    *,
+    name: str,
+    title: str,
+    engine: str,
+    updated_at: str,
+    is_current: bool,
+    col_widths: dict[str, int],
+) -> None:
+    """打印 session list 单行；``is_current=True`` 时首列加 '★ ' 前缀。"""
+    name_display = f"★ {name}" if is_current else f"  {name}"
+    row = "  ".join(
+        _pad(val, col_widths[key])
+        for key, val in [
+            ("name", name_display),
+            ("title", title or "—"),
+            ("engine", engine or "—"),
+            ("updated", _format_session_updated(updated_at)),
+        ]
+    )
+    print(row)
+
+
+def print_session_list_empty(current: str | None) -> None:
+    """无 session 时的提示。current 为 None 时说明 '尚无 current 指针'。"""
+    print("  （尚无 session）")
+    print()
+    if current is None:
+        print("当前 current 指针：（未设置）")
+    else:
+        print(f"当前 current 指针：{current}")
+    print()
+    print("提示：执行 yzrws start <workitem> 创建 default session")
+    print("      或 yzrws start <workitem> --session <name> 指定 session 名")
+
+
+def print_session_list_footer(current: str | None) -> None:
+    """list 末尾的 current 指针说明行。"""
+    if current is None:
+        print()
+        print("当前 current 指针：（未设置）")
+    else:
+        print()
+        print(f"当前 current 指针：{current}")
+
+
+def print_session_show(
+    *,
+    workitem_name: str,
+    session_name: str,
+    engine: str,
+    session_id: str,
+    status: str,
+    title: str,
+    model: str,
+    provider: str,
+    created_at: str,
+    updated_at: str,
+    resume_count: int,
+    is_current: bool,
+) -> None:
+    """打印 session 详情（三段式：基本信息 / 会话元数据 / 状态）。"""
+    print_banner("Workitem Session 详情")
+    print()
+    print(f"工作项：{workitem_name}")
+    print(f"Session：{session_name}")
+    if is_current:
+        print("当前 current：★ 是")
+    print()
+
+    basic_rows: list[tuple[str, str]] = [
+        ("name", session_name),
+        ("title", title or "—"),
+        ("engine", engine or "—"),
+        ("session_id", session_id or "—"),
+    ]
+    print_workitem_show_section("基本信息", basic_rows)
+
+    meta_rows: list[tuple[str, str]] = [
+        ("model", model or "—"),
+        ("provider", provider or "—"),
+        ("created_at", created_at or "—"),
+        ("updated_at", updated_at or "—"),
+    ]
+    print_workitem_show_section("会话元数据", meta_rows)
+
+    status_rows: list[tuple[str, str]] = [
+        ("status", status or "—"),
+        ("resume_count", str(resume_count)),
+    ]
+    print_workitem_show_section("状态", status_rows)
+
+
+def print_session_removed(
+    *,
+    workitem_name: str,
+    session_name: str,
+    was_current: bool,
+) -> None:
+    """打印删除 session 成功报告。"""
+    print_banner("删除 Session")
+    print()
+    print(f"工作项：{workitem_name}")
+    print(f"Session：{session_name}")
+    print()
+    print(f"  [删除] sessions/{session_name}.json")
+    if was_current:
+        print(f"  [{STATUS_WARN}] 该 session 是当前 current 指针，已清空")
+        print()
+        print("下次 yzrws start 将创建 default session。")
+    print()
+    print("=== 删除成功 ===")
+
+
+def print_session_use_changed(
+    *,
+    workitem_name: str,
+    old: str | None,
+    new: str,
+) -> None:
+    """打印切换 current 指针成功报告。"""
+    print_banner("切换 Session current 指针")
+    print()
+    print(f"工作项：{workitem_name}")
+    print(f"原 current：{old or '（未设置）'}")
+    print(f"新 current：{new}")
+    print()
+    print(f"  [设置] session.json.current = {new!r}")
+    print()
+    print("=== 切换成功 ===")
+
+
+def print_session_remove_confirm(
+    *,
+    workitem_name: str,
+    session_name: str,
+    is_current: bool,
+) -> bool:
+    """删除 session 前的交互式确认。返回 True = 确认删除。
+
+    与 ``print_provider_duplicate_confirm`` 风格一致。
+    """
+    print(f"  [{STATUS_WARN}] 即将删除 session {session_name!r}")
+    if is_current:
+        print(
+            f"  [{STATUS_WARN}] 该 session 是当前 current 指针，"
+            "删除后下次 yzrws start 将创建 default"
+        )
+    while True:
+        try:
+            ans = input("确认删除？[y/N]: ").strip().lower()
+        except EOFError:
+            return False
+        if ans in ("y", "yes"):
+            return True
+        if ans in ("", "n", "no"):
+            return False
+        print("请输入 y 或 n")
+
+
+def print_session_name_invalid(name: str) -> None:
+    """打印 session 名不合法错误。"""
+    print(f"[{STATUS_ERROR}] Session 名不合法：{name!r}")
+    print()
+    print("命名规则：")
+    print("  • 长度 1-32 个字符")
+    print("  • 只允许小写字母、数字、连字符（-）和下划线（_）")
+    print("  • 必须以小写字母或数字开头")
+    print()
+    print("示例：default, explore-outline, fix-bug-2026-06")
+
+
+def print_session_not_found(
+    *,
+    workitem_name: str,
+    session_name: str,
+) -> None:
+    """打印 session 不存在错误。"""
+    print(f"[{STATUS_ERROR}] Session {session_name!r} 不存在于工作项 {workitem_name!r}")
+    print()
+    print(f"提示：执行 yzrws workitem session list {workitem_name} 查看已有 session")
+
+
+def print_session_engine_mismatch(
+    *,
+    workitem_name: str,
+    session_name: str,
+    session_engine: str,
+    requested_engine: str,
+) -> None:
+    """打印 start 时 --engine 与现存 session.engine 冲突的错误。"""
+    print(
+        f"[{STATUS_ERROR}] Session {session_name!r} 的 engine {session_engine!r} "
+        f"与指定的 --engine {requested_engine!r} 不一致"
+    )
+    print()
+    print(f"  workitem：{workitem_name}")
+    print(f"  session.engine：{session_engine}")
+    print(f"  --engine     ：{requested_engine}")
+    print()
+    print("可执行以下操作之一：")
+    print("  1. 去掉 --engine 参数，沿用 session 自带的 engine：")
+    print(f"     yzrws start {workitem_name} --session {session_name}")
+    print("  2. 切换到与 session.engine 一致的 engine：")
+    print(
+        f"     yzrws start {workitem_name} --session {session_name} "
+        f"--engine {session_engine}"
+    )
+    print("  3. 创建新的同名 session（先删后建）：")
+    print(f"     yzrws workitem session remove {workitem_name} {session_name}")

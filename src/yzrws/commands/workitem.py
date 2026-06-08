@@ -4,8 +4,13 @@
   - workitem set-model <name> --provider <name>  绑定一个 workspace Provider
   - workitem unset-model <name>                  解除绑定（恢复继承）
   - workitem show <name>                         展示 workitem 完整配置与生效模型
+  - workitem set-outline <name> [--read-only]    启用 Outline MCP
+  - workitem unset-outline <name>                解除 Outline 引用
+  - workitem unset-outline-readonly <name>       关闭 Outline 只读模式
+  - workitem session <list|show|remove|use>      管理多 session
 
-设计参考 doc/command_design.md §配置 workitem 与 doc/provider_design.md §回退链。
+设计参考 doc/command_design.md §配置 workitem / §管理 session 与
+doc/provider_design.md §回退链 / doc/session_design.md。
 """
 
 from __future__ import annotations
@@ -16,15 +21,29 @@ from pathlib import Path
 
 from yzrws import paths
 from yzrws.commands import REGISTRY
-from yzrws.commands._name import is_valid_workitem_name
+from yzrws.commands._name import (
+    is_valid_session_name,
+    is_valid_workitem_name,
+)
 from yzrws.commands._workspace_check import is_workspace_initialized
 from yzrws.output import (
     STATUS_ERROR,
     STATUS_WARN,
+    _display_width,
     print_banner,
     print_failure,
     print_provider_incompatible_for_engine,
     print_provider_not_found_for_set_model,
+    print_session_list_empty,
+    print_session_list_footer,
+    print_session_list_header,
+    print_session_list_row,
+    print_session_name_invalid,
+    print_session_not_found,
+    print_session_remove_confirm,
+    print_session_removed,
+    print_session_show,
+    print_session_use_changed,
     print_workspace_not_initialized,
     print_workitem_not_found,
     print_workitem_set_model,
@@ -37,10 +56,18 @@ from yzrws.provider import (
     load_config,
     resolve_model_config,
 )
+from yzrws.session import (
+    delete_session_by_name,
+    get_current_session_name,
+    list_sessions,
+    migrate_legacy_session,
+    read_session_by_name,
+    set_current_session_name,
+)
 from yzrws.workspace import atomic_write_json
 
 # 顶层 --help 显示的简短描述
-HELP = "管理 workitem 级别的配置（模型 / Provider 绑定等）"
+HELP = "管理 workitem 级别的配置（模型 / Provider 绑定 / session 等）"
 
 
 def run(args: argparse.Namespace) -> int:
@@ -59,8 +86,12 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         parsed = parser.parse_args(argv)
-    except SystemExit:
-        # argparse 在缺少必需参数时调用 sys.exit(2)
+    except SystemExit as e:
+        # argparse 错误退出码：2 = 缺少必需参数 / 参数错误
+        # argparse 帮助退出码：0 = 子 parser 显示 --help（SystemExit(0)）
+        code = e.code
+        if isinstance(code, int):
+            return code
         return 2
 
     if parsed.subcmd is None:
@@ -140,6 +171,53 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     unset_ro_p.add_argument("name", help="工作项名称")
     unset_ro_p.set_defaults(func=run_unset_outline_readonly)
+
+    # ---- workitem session <list|show|remove|use> ----
+    session_p = subparsers.add_parser(
+        "session",
+        help="管理 workitem 下的多个 session（list / show / remove / use）",
+    )
+    session_subs = session_p.add_subparsers(
+        dest="session_subcmd",
+        title="子命令",
+        metavar="<subcmd>",
+    )
+    # session 根节点（用户输入 yzrws workitem session 不带子命令）的 dispatcher
+    session_p.set_defaults(func=run_session_dispatch)
+
+    # session list <workitem>
+    s_list = session_subs.add_parser("list", help="列出 workitem 下所有 session")
+    s_list.add_argument("name", help="工作项名称")
+    s_list.set_defaults(func=run_session_list)
+
+    # session show <workitem> <session>
+    s_show = session_subs.add_parser("show", help="显示某个 session 的详情")
+    s_show.add_argument("name", help="工作项名称")
+    s_show.add_argument("session", help="session 名")
+    s_show.set_defaults(func=run_session_show)
+
+    # session remove <workitem> <session> [-y]
+    s_remove = session_subs.add_parser(
+        "remove", help="删除 session（仅 yzrws 元数据，不碰引擎原生数据）"
+    )
+    s_remove.add_argument("name", help="工作项名称")
+    s_remove.add_argument("session", help="session 名")
+    s_remove.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        default=False,
+        help="跳过确认直接删除",
+    )
+    s_remove.set_defaults(func=run_session_remove)
+
+    # session use <workitem> <session>
+    s_use = session_subs.add_parser(
+        "use", help="切换 workitem 的 current 指针到指定 session"
+    )
+    s_use.add_argument("name", help="工作项名称")
+    s_use.add_argument("session", help="session 名")
+    s_use.set_defaults(func=run_session_use)
 
     return parser
 
@@ -519,6 +597,249 @@ def run_unset_outline_readonly(args: argparse.Namespace) -> int:
         )
     print()
     print("=== 清除成功 ===")
+    return 0
+
+
+# ==================================================================
+# yzrws workitem session <subcmd>
+# ==================================================================
+
+
+def _precheck_session_target(workspace_path: Path, name: str) -> Path | None:
+    """session 子命令的公共前置检查 + 迁移。
+
+    流程：workspace 初始化 → workitem 存在 → 迁移旧 session 格式 → 返回 dir。
+    失败时打印错误并返回 None，caller 直接 return 1。
+    """
+    if not is_workspace_initialized(workspace_path):
+        print_workspace_not_initialized(workspace_path)
+        return None
+
+    if not is_valid_workitem_name(name):
+        print_workitem_not_found(name, workspace_path)
+        return None
+
+    target = workspace_path / name
+    if not target.is_dir() or not (target / "workitem.json").is_file():
+        print_workitem_not_found(name, workspace_path)
+        return None
+
+    # 旧格式迁移（幂等）
+    migrate_legacy_session(target)
+    return target
+
+
+def run_session_dispatch(args: argparse.Namespace) -> int:
+    """``yzrws workitem session`` 无子命令时的处理——打印帮助并返回 1。"""
+    # 重新构造 session 子命令组的 parser 用于打印帮助
+    session_parser = _build_session_parser()
+    session_parser.print_help()
+    return 1
+
+
+def _build_session_parser() -> argparse.ArgumentParser:
+    """单独构造 session 子命令组的 parser（供 dispatcher 与 bash 补全参考）。"""
+    parser = argparse.ArgumentParser(
+        prog="yzrws workitem session",
+        description="管理 workitem 下的多个 session",
+        add_help=False,
+    )
+    subs = parser.add_subparsers(dest="subcmd", title="子命令", metavar="<subcmd>")
+    for cmd, help_text in [
+        ("list", "列出 workitem 下所有 session"),
+        ("show", "显示某个 session 的详情"),
+        ("remove", "删除 session（仅 yzrws 元数据）"),
+        ("use", "切换 workitem 的 current 指针"),
+    ]:
+        p = subs.add_parser(cmd, help=help_text, add_help=False)
+        p.add_argument("name", help="工作项名称")
+        if cmd != "list":
+            p.add_argument("session", help="session 名")
+        if cmd == "remove":
+            p.add_argument(
+                "-y",
+                "--yes",
+                action="store_true",
+                default=False,
+                help="跳过确认直接删除",
+            )
+    return parser
+
+
+# ==================================================================
+# yzrws workitem session list
+# ==================================================================
+
+
+def _session_list_col_widths(sessions: list) -> dict[str, int]:
+    """根据实际数据动态计算列宽。"""
+    titles = [s.title or "—" for s in sessions] + ["TITLE"]
+    engines = [s.engine or "—" for s in sessions] + ["ENGINE"]
+    names = [f"  {s.name}" for s in sessions] + ["NAME"]
+    updates = ["9999-99-99 99:99:99"] + ["UPDATED"]
+    return {
+        "name": max(_display_width(n) for n in names),
+        "title": max(_display_width(t) for t in titles),
+        "engine": max(_display_width(e) for e in engines),
+        "updated": max(_display_width(u) for u in updates),
+    }
+
+
+def run_session_list(args: argparse.Namespace) -> int:
+    """实现 ``yzrws workitem session list <name>``。"""
+    workspace_path = paths.get_workspace_path()
+    target = _precheck_session_target(workspace_path, args.name)
+    if target is None:
+        return 1
+
+    sessions = list_sessions(target)
+    current = get_current_session_name(target)
+
+    print_banner("Workitem Session 列表")
+    print()
+    print(f"工作项：{args.name}")
+    print(f"路径：{target}")
+    print()
+
+    if not sessions:
+        print_session_list_empty(current)
+        return 0
+
+    col_widths = _session_list_col_widths(sessions)
+    print_session_list_header(col_widths)
+    for s in sessions:
+        print_session_list_row(
+            name=s.name,
+            title=s.title,
+            engine=s.engine,
+            updated_at=s.updated_at,
+            is_current=(current is not None and s.name == current),
+            col_widths=col_widths,
+        )
+    print_session_list_footer(current)
+    return 0
+
+
+# ==================================================================
+# yzrws workitem session show
+# ==================================================================
+
+
+def run_session_show(args: argparse.Namespace) -> int:
+    """实现 ``yzrws workitem session show <name> <session>``。"""
+    workspace_path = paths.get_workspace_path()
+    target = _precheck_session_target(workspace_path, args.name)
+    if target is None:
+        return 1
+
+    if not is_valid_session_name(args.session):
+        print_session_name_invalid(args.session)
+        return 1
+
+    info = read_session_by_name(target, args.session)
+    if info is None:
+        print_session_not_found(workitem_name=args.name, session_name=args.session)
+        return 1
+
+    current = get_current_session_name(target)
+    print_session_show(
+        workitem_name=args.name,
+        session_name=info.name,
+        engine=info.engine,
+        session_id=info.session_id,
+        status=info.status,
+        title=info.title,
+        model=info.model or "",
+        provider=info.provider or "",
+        created_at=info.created_at,
+        updated_at=info.updated_at,
+        resume_count=info.resume_count,
+        is_current=(current is not None and info.name == current),
+    )
+    return 0
+
+
+# ==================================================================
+# yzrws workitem session remove
+# ==================================================================
+
+
+def run_session_remove(args: argparse.Namespace) -> int:
+    """实现 ``yzrws workitem session remove <name> <session> [-y]``。"""
+    workspace_path = paths.get_workspace_path()
+    target = _precheck_session_target(workspace_path, args.name)
+    if target is None:
+        return 1
+
+    if not is_valid_session_name(args.session):
+        print_session_name_invalid(args.session)
+        return 1
+
+    info = read_session_by_name(target, args.session)
+    if info is None:
+        print_session_not_found(workitem_name=args.name, session_name=args.session)
+        return 1
+
+    current = get_current_session_name(target)
+    is_current = current is not None and info.name == current
+
+    # 确认
+    if not args.yes:
+        print_banner("删除 Session")
+        print()
+        print(f"工作项：{args.name}")
+        print(f"Session：{info.name}")
+        print()
+        if not print_session_remove_confirm(
+            workitem_name=args.name,
+            session_name=info.name,
+            is_current=is_current,
+        ):
+            print()
+            print("删除已取消。")
+            return 0
+
+    # 真删
+    delete_session_by_name(target, info.name)
+    if is_current:
+        set_current_session_name(target, None)
+
+    print_session_removed(
+        workitem_name=args.name,
+        session_name=info.name,
+        was_current=is_current,
+    )
+    return 0
+
+
+# ==================================================================
+# yzrws workitem session use
+# ==================================================================
+
+
+def run_session_use(args: argparse.Namespace) -> int:
+    """实现 ``yzrws workitem session use <name> <session>``。"""
+    workspace_path = paths.get_workspace_path()
+    target = _precheck_session_target(workspace_path, args.name)
+    if target is None:
+        return 1
+
+    if not is_valid_session_name(args.session):
+        print_session_name_invalid(args.session)
+        return 1
+
+    info = read_session_by_name(target, args.session)
+    if info is None:
+        print_session_not_found(workitem_name=args.name, session_name=args.session)
+        return 1
+
+    old = get_current_session_name(target)
+    set_current_session_name(target, info.name)
+    print_session_use_changed(
+        workitem_name=args.name,
+        old=old,
+        new=info.name,
+    )
     return 0
 
 

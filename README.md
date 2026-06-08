@@ -14,7 +14,11 @@
 │   ├── raw/            # 原始语料（未整理素材，不纳入 git）
 │   ├── local_wiki/     # 工作项本地知识（Markdown 文档）
 │   ├── workitem.json   # 元数据（name / create_at / status）
-│   ├── session_id      # 当前 Code Agent session id
+│   ├── session.json    # current session 指针（{"current": "<name>"}）
+│   ├── sessions/       # 用户命名 session + 引擎切换归档
+│   │   ├── default.json
+│   │   ├── ...
+│   │   └── _archive_<engine>_<timestamp>.json
 │   ├── CLAUDE.md       # 本工作项的上下文
 │   └── setting.json    # per-workitem 模型 / 服务商 env
 ├── MEMORY.md           # 跨工作项长期记忆
@@ -170,7 +174,7 @@ yzrws init
 # 创建 / 列举 / 打开工作项
 yzrws create workitem <name> [--engine <engine>] [--start]
 yzrws list
-yzrws start <name> [--engine <engine>]
+yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 
 # 管理 Provider（workspace 级 .config/provider.json）
 yzrws model provider add [--name <name> --base-url <url> --auth-key <key> --model <model>] [--agent-type <engine>]... [--set-default] [-y]
@@ -182,6 +186,12 @@ yzrws model provider set-default <name>
 yzrws workitem set-model <name> --provider <name>
 yzrws workitem unset-model <name>
 yzrws workitem show <name>
+
+# 管理 workitem 下的多 session（同一 workitem 可有多个用户命名 session）
+yzrws workitem session list <name>
+yzrws workitem session show <name> <session>
+yzrws workitem session remove <name> <session> [-y]
+yzrws workitem session use <name> <session>
 ```
 
 ## Shell 补全

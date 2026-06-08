@@ -344,7 +344,7 @@ workspace 未初始化：
 ### 命令格式
 
 ```text
-yzrws start <name> [--engine <engine>]
+yzrws start <name> [--engine <engine>] [--session <name>] [--title "<text>"]
 ```
 
 - **执行入口**：`bin/yzrws start <name>`（通过 `python -m yzrws start <name>` 等价调用）
@@ -354,8 +354,23 @@ yzrws start <name> [--engine <engine>]
 | --- | --- | --- |
 | `<name>` | ✓ | 工作项名称 |
 | `--engine <engine>` | ✗ | 指定引擎（自动创建或切换引擎时使用；缺省从 setting.json 读） |
+| `--session <name>` | ✗ | 指定要恢复/创建的 session 名；缺省 = current 指针或 `'default'` |
+| `--title "<text>"` | ✗ | 新建 session 时设置 title；已存在 session 忽略 |
 
 ### 行为
+
+`yzrws start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
+
+1. **自动创建**：工作项不存在时，自动调用 `create workitem` 逻辑创建，然后启动会话
+2. **启动新会话**：工作项已存在且无 session 记录时，启动新会话（用 `--session` 指定名或 `default`）
+3. **恢复会话**：workitem 存在且 `--session` / current 指针指向的 session 元数据存在时，自动恢复
+4. **引擎冲突**：`--engine` 与现存 `session.engine` 不一致时 **error**（提示用户换 session 或去掉 `--engine`）
+
+> session 恢复决策由 `--session` / `session.json` 指针共同决定：
+> `--session` 显式指定 > current 指针 > 缺省 `'default'`。
+> 完整场景分支与引擎冲突处理见 [`session_design.md`](./session_design.md)。
+
+### 行为（打开 workitem）
 
 `yzrws start <name>` 打开工作项并启动 Agent 会话。处理 4 类场景：
 
@@ -398,6 +413,7 @@ yzrws start <name> [--engine <engine>]
 工作项：my-task
 路径：~/yzr_workspace/my-task
 引擎：claude-code
+Session：default  [新建]
 
 启动新会话
 
@@ -415,6 +431,7 @@ Session ID：abc123
 工作项：my-task
 路径：~/yzr_workspace/my-task
 引擎：claude-code
+Session：default  [续命]
 
 恢复会话：abc123
 
@@ -424,21 +441,40 @@ Session ID：abc123
 Session ID：abc123
 ```
 
-引擎切换：
+`--session` 切换到新 session：
 
 ```text
-检测到引擎切换：claude-code → opencode
-已归档旧 session 到：test-task/sessions/claude-code_20260606T154440.json
-
 === 启动会话 ===
 
-工作项：test-task
-路径：~/yzr_workspace/test-task
-引擎：opencode
+工作项：my-task
+路径：~/yzr_workspace/my-task
+引擎：claude-code
+Session：explore-outline  [新建]
 
 启动新会话
 
-（OpenCode 交互式 TUI 启动...）
+已将 current 切换为：explore-outline
+
+（Claude Code 交互式 TUI 启动...）
+```
+
+引擎冲突（`--engine` 与现存 `session.engine` 不一致）：
+
+```text
+引擎已切换为：opencode
+[错误] Session 'default' 的 engine 'claude-code' 与指定的 --engine 'opencode' 不一致
+
+  workitem：my-task
+  session.engine：claude-code
+  --engine     ：opencode
+
+可执行以下操作之一：
+  1. 去掉 --engine 参数，沿用 session 自带的 engine：
+     yzrws start my-task --session default
+  2. 切换到与 session.engine 一致的 engine：
+     yzrws start my-task --session default --engine claude-code
+  3. 创建新的同名 session（先删后建）：
+     yzrws workitem session remove my-task default
 ```
 
 ### 退出码
@@ -446,17 +482,25 @@ Session ID：abc123
 | 退出码 | 含义 |
 | --- | --- |
 | 0 | 成功（会话正常退出） |
-| 1 | 失败（名称不合法、workspace 未初始化、引擎不可用等） |
+| 1 | 失败（名称不合法、workspace 未初始化、引擎不可用、`--session` 名不合法、引擎冲突等） |
 | 非 0 | 引擎进程异常退出时透传其退出码 |
 
 ### 实现细节
 
 - **自动创建**：复用 `create workitem` 的目录和文件创建逻辑，无需用户先执行 `create`
 - **引擎选择**：优先级为 `--engine` 参数 → `setting.json` → 全局默认 → `claude-code`
-- **引擎切换归档**：当 `session.json.engine` 与目标引擎不同时，自动归档旧 session 到
-  `sessions/<engine>_<timestamp>.json`
-- **历史 session 恢复**：切换回历史引擎时，自动查找 `sessions/` 目录下该引擎的最新 session
-- **Session ID 提取**：会话结束后从引擎本地存储提取 session_id 并写入 `session.json`
+- **多 session 决策**：target session 名 = `--session` → `session.json.current` → `'default'`；
+  完整流程见 [`session_design.md`](./session_design.md) §Session 生命周期
+- **引擎冲突检测**：`target_session.engine != engine_name` 时 error（避免
+  "归档 X"歧义），不让 yzrws 自动切引擎
+- **旧格式迁移**：start 入口先调 `migrate_legacy_session`（幂等），
+  旧 `session.json` / 旧 `sessions/<engine>_<ts>.json` 自动转新格式
+- **Session 写入**：会话结束后把 `session_id` / `resume_count` / `updated_at` 等写回
+  `sessions/<target_session_name>.json`；current 指针通过
+  `set_current_session_name` 单独原子写
+- **历史 session 恢复**：仅在 target_session 为空且用户未显式 `--session` 时，
+  从 `sessions/_archive_<engine>_*.json` 找最新历史（首次自动创建场景）
+- **Session ID 提取**：会话结束后从引擎本地存储提取 session_id
 - **规则同步**：OpenCode 启动前自动生成 `opencode.json` 桥接 `CLAUDE.md`；Claude Code 无需额外同步
 
 ### 相关文档
@@ -806,3 +850,205 @@ setting.json（原始）：
   `ResolvedModel`（Claude Code 注入 `ANTHROPIC_*` 环境变量；OpenCode 写入
   `opencode.json` 的 `model` / `provider` 字段）
 - [`provider_design.md`](./provider_design.md)：模型配置的回退链
+
+## 管理 session
+
+管理 workitem 下的多个 Code Agent Session。命令集：
+
+- `session list <workitem>`：列出所有用户命名 session（含 current 标注）
+- `session show <workitem> <session>`：显示 session 详情
+- `session remove <workitem> <session> [-y]`：删除 session（仅 yzrws 元数据）
+- `session use <workitem> <session>`：切换 current 指针
+
+### 命令格式
+
+```text
+yzrws workitem session list    <workitem>
+yzrws workitem session show    <workitem> <session>
+yzrws workitem session remove  <workitem> <session> [-y]
+yzrws workitem session use     <workitem> <session>
+```
+
+- **执行入口**：`bin/yzrws workitem session <subcmd>`（通过 `python -m yzrws` 等价调用）
+- **参数**：
+
+| 参数 | 是否必须 | 说明 |
+| --- | --- | --- |
+| `list <workitem>` | ✓ | 工作项名称 |
+| `show <workitem> <session>` | ✓ | 工作项名称 + session 名 |
+| `remove <workitem> <session>` | ✓ | 工作项名称 + session 名 |
+| `remove -y` / `--yes` | ✗ | 跳过确认直接删除 |
+| `use <workitem> <session>` | ✓ | 工作项名称 + session 名 |
+
+### 行为
+
+`yzrws workitem session` 读写 workitem 目录下的 `sessions/<name>.json` /
+`session.json`（current 指针）。处理 4 类场景：
+
+1. **list**：扫描 `sessions/*.json` 排除下划线开头的归档，按 `updated_at`
+   倒序，标 `★` 标识 current
+2. **show**：读 `sessions/<session>.json` 并展示基本信息 / 会话元数据 / 状态三段
+3. **remove**：删 `sessions/<session>.json`；若是 current 则同步清空指针
+   （`session.json.current = null`）；删除的是引擎原生数据**不**在范围内
+4. **use**：原子写 `session.json.current = <session>`
+
+session 命名规则同 `is_valid_session_name`（1-32 字符，小写字母 / 数字开头，
+可含 `-_`）；不合法时 error 退出码 1。
+
+### 输出格式
+
+`list` 正常：
+
+```text
+=== Workitem Session 列表 ===
+
+工作项：my-task
+路径：/Users/<user>/yzr_workspace/my-task
+
+NAME               TITLE                  ENGINE       UPDATED
+-----------------  ---------------------  -----------  -------------------
+★ default          —                      claude-code  2026-06-08 23:49:36
+  explore-outline  研究 Outline MCP 集成  claude-code  2026-06-08 23:49:20
+
+当前 current 指针：default
+```
+
+`list` 空：
+
+```text
+  （尚无 session）
+
+当前 current 指针：（未设置）
+
+提示：执行 yzrws start <workitem> 创建 default session
+      或 yzrws start <workitem> --session <name> 指定 session 名
+```
+
+`show` 正常：
+
+```text
+=== Workitem Session 详情 ===
+
+工作项：my-task
+Session：default
+当前 current：★ 是
+
+基本信息：
+  KEY         VALUE
+  ----------  ----------------------------------------
+  name        default
+  title       —
+  engine      claude-code
+  session_id  test-session-1780933742157298000
+
+会话元数据：
+  KEY         VALUE
+  ----------  ----------------------------------------
+  model       —
+  provider    —
+  created_at  2026-06-08T23:49:02+08:00
+  updated_at  2026-06-08T23:49:36+08:00
+
+状态：
+  KEY           VALUE
+  ------------  ----------------------------------------
+  status        paused
+  resume_count  2
+```
+
+`remove` 非 current（`-y`）：
+
+```text
+=== 删除 Session ===
+
+工作项：my-task
+Session：default
+
+  [删除] sessions/default.json
+
+=== 删除成功 ===
+```
+
+`remove` 是 current（交互式确认 → y）：
+
+```text
+=== 删除 Session ===
+
+工作项：my-task
+Session：explore-outline
+
+  [警告] 即将删除 session 'explore-outline'
+  [警告] 该 session 是当前 current 指针，删除后下次 yzrws start 将创建 default
+确认删除？[y/N]: === 删除 Session ===
+
+工作项：my-task
+Session：explore-outline
+
+  [删除] sessions/explore-outline.json
+  [警告] 该 session 是当前 current 指针，已清空
+
+下次 yzrws start 将创建 default session。
+
+=== 删除成功 ===
+```
+
+`use` 切换成功：
+
+```text
+=== 切换 Session current 指针 ===
+
+工作项：my-task
+原 current：default
+新 current：explore-outline
+
+  [设置] session.json.current = 'explore-outline'
+
+=== 切换成功 ===
+```
+
+`remove` / `show` / `use` session 不存在：
+
+```text
+[错误] Session 'does-not-exist' 不存在于工作项 'my-task'
+
+提示：执行 yzrws workitem session list <workitem> 查看已有 session
+```
+
+session 名不合法：
+
+```text
+[错误] Session 名不合法：'Bad Name'
+
+命名规则：
+  • 长度 1-32 个字符
+  • 只允许小写字母、数字、连字符（-）和下划线（_）
+  • 必须以小写字母或数字开头
+
+示例：default, explore-outline, fix-bug-2026-06
+```
+
+### 退出码
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 成功 |
+| 1 | 失败（workspace 未初始化、workitem 不存在、session 名不合法、session 不存在等） |
+
+### 实现细节
+
+- **公共前置**：所有 `session` 子命令共享 `_precheck_session_target`：
+  workspace 初始化 → workitem 存在性检查 → `migrate_legacy_session` → 返回 workitem_dir
+- **下划线归档过滤**：`list_sessions` 仅返回 `_is_valid_session_filename` 通过的文件
+  （非空 + 不以 `_archive_` 开头 + 满足 `^[a-z0-9][a-z0-9_-]{0,31}$`）
+- **current 指针原子写**：`set_current_session_name` 通过 `atomic_write_json`
+  写 `{"current": <name>}`；name=None 时写 `{"current": null}`
+- **删除不改引擎原生数据**：`delete_session_by_name` 只删 `yzrws` 层的
+  `sessions/<name>.json`；引擎在 `~/.claude/projects/` 等的 session 文件
+  保留（用户可手动清理）
+- **与 start 协作**：`yzrws start` 不带 `--session` 时读 current 指针；
+  带 `--session <name>` 时切换 current；详见 §打开 workitem / [`session_design.md`](./session_design.md)
+
+### 相关文档
+
+- [`session_design.md`](./session_design.md)：多 session 存储布局、current
+  指针语义、迁移函数、引擎冲突处理

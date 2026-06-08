@@ -83,6 +83,28 @@ _yzrws_agent_type_values() {
     printf '%s\n' all claude-code opencode
 }
 
+# 列出 workitem 下所有"用户命名 session"（排除下划线开头的归档）。
+# 路径不存在时静默返回空——补全失败不应阻断主命令。
+_yzrws_sessions() {
+    local wi="$1"
+    [[ -n "$wi" ]] || return 0
+    local ws sessions_dir
+    ws="$(_yzrws_workspace_path)"
+    sessions_dir="$ws/$wi/sessions"
+    [[ -d "$sessions_dir" ]] || return 0
+    python3 - "$sessions_dir" <<'PYEOF' 2>/dev/null
+import json, os, sys
+d = sys.argv[1]
+try:
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json") or fn.startswith("_"):
+            continue
+        print(fn[:-5])  # 去掉 .json 后缀即为 session 名
+except OSError:
+    sys.exit(0)
+PYEOF
+}
+
 # 列出所有"后接值"的 flag。位置参数解析阶段会跳过这些 flag 后面的 token，
 # 避免把"yzrws start --engine claude-code <name>"误认成
 # "yzrws <start> <claude-code> <name>"（导致 dispatch 走错分支）。
@@ -92,6 +114,8 @@ _yzrws_agent_type_values() {
 _yzrws_value_taking_flags() {
     printf '%s\n' \
         --engine -e \
+        --session -s \
+        --title -t \
         --agent-type \
         --provider \
         --name \
@@ -119,7 +143,7 @@ _yzrws_complete_flags() {
                 init) flags="-h --help" ;;
                 list) flags="-h --help" ;;
                 create) flags="-h --help" ;;
-                start) flags="-h --help --engine -e" ;;
+                start) flags="-h --help --engine -e --session -s --title -t" ;;
                 model) flags="-h --help" ;;
                 workitem) flags="-h --help" ;;
                 outline) flags="-h --help" ;;
@@ -141,7 +165,7 @@ _yzrws_complete_flags() {
                 outline.remove) flags="-h --help -y --yes" ;;
                 # yzrws start <workitem>  -- 位置参数已填，但用户仍可能想
                 # 加 --engine 等 flag。start.* 兜住这类场景。
-                start.*) flags="-h --help --engine -e" ;;
+                start.*) flags="-h --help --engine -e --session -s --title -t" ;;
             esac
             ;;
         3|4)
@@ -195,7 +219,7 @@ _yzrws_dispatch_1() {
             COMPREPLY=( $(compgen -W "provider" -- "$cur") )
             ;;
         workitem)
-            COMPREPLY=( $(compgen -W "set-model unset-model show set-outline unset-outline unset-outline-readonly" -- "$cur") )
+            COMPREPLY=( $(compgen -W "set-model unset-model show set-outline unset-outline unset-outline-readonly session" -- "$cur") )
             ;;
         outline)
             COMPREPLY=( $(compgen -W "add show update remove" -- "$cur") )
@@ -230,6 +254,11 @@ _yzrws_dispatch_2() {
             COMPREPLY=( $(compgen -W "$(_yzrws_workitems)" -- "$cur") )
             ;;
 
+        # yzrws workitem session <list|show|remove|use> — 还要再补一个 workitem
+        workitem.session)
+            COMPREPLY=( $(compgen -W "list show remove use" -- "$cur") )
+            ;;
+
         # yzrws outline <add|show|update|remove>  无位置参数
         outline.*) COMPREPLY=() ;;
 
@@ -247,7 +276,30 @@ _yzrws_dispatch_3() {
             COMPREPLY=( $(compgen -W "$(_yzrws_providers)" -- "$cur") )
             ;;
 
+        # yzrws workitem session <list|show|remove|use> <workitem>
+        workitem.session.list|\
+        workitem.session.show|\
+        workitem.session.remove|\
+        workitem.session.use)
+            COMPREPLY=( $(compgen -W "$(_yzrws_workitems)" -- "$cur") )
+            ;;
+
         # 其他三级子命令无位置参数
+        *) COMPREPLY=() ;;
+    esac
+}
+
+# yzrws <cmd> <sub> <leaf> <workitem> 当前在第四位置
+_yzrws_dispatch_4() {
+    local cmd="$1" sub="$2" leaf="$3" wi="$4" cur="$5"
+    case "$cmd.$sub.$leaf" in
+        # yzrws workitem session <show|remove|use> <workitem> <session>
+        workitem.session.show|\
+        workitem.session.remove|\
+        workitem.session.use)
+            COMPREPLY=( $(compgen -W "$(_yzrws_sessions "$wi")" -- "$cur") )
+            ;;
+        # list 子命令无第 4 位置参数
         *) COMPREPLY=() ;;
     esac
 }
@@ -261,6 +313,28 @@ _yzrws_handle_value_flags() {
     case "$prev_flag" in
         --engine|-e)
             COMPREPLY=( $(compgen -W "$(_yzrws_engines)" -- "$cur") )
+            return 0
+            ;;
+        --session|-s)
+            # yzrws start --session <Tab>：从 COMP_WORDS 反推最近的工作项名
+            local wi=""
+            local j tok
+            for ((j = 1; j < COMP_CWORD; j++)); do
+                tok="${COMP_WORDS[$j]}"
+                if [[ "$tok" != -* && "$tok" != "start" && "$tok" != "yzrws" ]]; then
+                    wi="$tok"
+                fi
+            done
+            if [[ -n "$wi" ]]; then
+                COMPREPLY=( $(compgen -W "$(_yzrws_sessions "$wi")" -- "$cur") )
+            else
+                COMPREPLY=()
+            fi
+            return 0
+            ;;
+        --title|-t)
+            # title 是自由文本，不补全
+            COMPREPLY=()
             return 0
             ;;
         --agent-type)
@@ -346,6 +420,7 @@ _yzrws() {
         1) _yzrws_dispatch_1 "${cmd_path[0]}" "$cur" ;;
         2) _yzrws_dispatch_2 "${cmd_path[0]}" "${cmd_path[1]}" "$cur" ;;
         3) _yzrws_dispatch_3 "${cmd_path[0]}" "${cmd_path[1]}" "${cmd_path[2]}" "$cur" ;;
+        4) _yzrws_dispatch_4 "${cmd_path[0]}" "${cmd_path[1]}" "${cmd_path[2]}" "${cmd_path[3]}" "$cur" ;;
         *) COMPREPLY=() ;;
     esac
 
