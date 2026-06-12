@@ -7,13 +7,12 @@
 所有 Provider 配置统一存放在 workspace 下的 <workspace>/.config/provider.json。
 """
 
-from __future__ import annotations
-
 import argparse
 import getpass
 import json
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 from yzrws import paths
 from yzrws.output import (
@@ -208,9 +207,9 @@ def _collect_provider_fields(args: argparse.Namespace, target_path: Path) -> Pro
 
 
 def _collect_agent_types(
-    cli_values: list[str] | None,
-    engines: list[str],
-) -> list[str]:
+    cli_values: Optional[List[str]],
+    engines: List[str],
+) -> List[str]:
     """收集 agent_types：CLI 多次 --agent-type > 缺省 = 交互式 prompt。
 
     CLI 分支走 `_validate_agent_types`；无 CLI 值时进入交互式 prompt。
@@ -221,9 +220,9 @@ def _collect_agent_types(
 
 
 def _validate_agent_types(
-    cli_values: list[str],
-    engines: list[str],
-) -> list[str]:
+    cli_values: List[str],
+    engines: List[str],
+) -> List[str]:
     """校验并规范化 CLI 提供的 agent_types 列表。
 
     处理 "all" 特殊值：
@@ -256,8 +255,8 @@ def _validate_agent_types(
         )
         raise _AbortError
     # 去重保持顺序
-    seen: set[str] = set()
-    deduped: list[str] = []
+    seen: Set[str] = set()
+    deduped: List[str] = []
     for v in non_all:
         if v not in seen:
             seen.add(v)
@@ -265,7 +264,7 @@ def _validate_agent_types(
     return deduped
 
 
-def _prompt_agent_types(engines: list[str]) -> list[str]:
+def _prompt_agent_types(engines: List[str]) -> List[str]:
     """交互式收集 agent_types（编号选择形式）。
 
     打印编号菜单：1) all + 已注册 engine 列表；用户输入编号（单选）或
@@ -276,7 +275,7 @@ def _prompt_agent_types(engines: list[str]) -> list[str]:
     from yzrws.provider import AGENT_TYPE_ALL
 
     # 菜单：1) all 在前，其后是已注册 engine
-    options: list[str] = [AGENT_TYPE_ALL, *engines]
+    options: List[str] = [AGENT_TYPE_ALL, *engines]
 
     print("Agent types:")
     for idx, name in enumerate(options, start=1):
@@ -315,8 +314,8 @@ def _prompt_agent_types(engines: list[str]) -> list[str]:
         raise _AbortError
 
     # 编号 → 名字，去重保持顺序
-    chosen: list[str] = []
-    seen: set[int] = set()
+    chosen: List[str] = []
+    seen: set = set()
     for i in indices:
         if i in seen:
             continue
@@ -339,7 +338,7 @@ def _prompt_agent_types(engines: list[str]) -> list[str]:
     return non_all
 
 
-def _is_valid_agent_type_str(name: str, engines: list[str]) -> bool:
+def _is_valid_agent_type_str(name: str, engines: List[str]) -> bool:
     """校验 agent_type 字符串是否在已注册 engine 列表中。"""
     from yzrws.provider import is_valid_agent_type
 
@@ -348,7 +347,7 @@ def _is_valid_agent_type_str(name: str, engines: list[str]) -> bool:
 
 def _prompt_or_arg(
     label: str,
-    cli_value: str | None,
+    cli_value: Optional[str],
     *,
     validator,
 ) -> str:
@@ -368,7 +367,7 @@ def _prompt_or_arg(
     return value
 
 
-def _prompt_secret(label: str, cli_value: str | None) -> str:
+def _prompt_secret(label: str, cli_value: Optional[str]) -> str:
     """交互式隐藏输入 Auth Key；CLI 传值时回显提示但不要求隐藏。"""
     if cli_value:
         return cli_value
@@ -503,7 +502,7 @@ _MIN_LIST_COL_WIDTHS = {
 }
 
 
-def _compute_list_col_widths(config, engines: list[str]) -> dict[str, int]:
+def _compute_list_col_widths(config, engines: List[str]) -> Dict[str, int]:
     """根据实际数据动态计算 list 表格的列宽。"""
     from yzrws.provider import ProviderConfig
 
@@ -528,12 +527,12 @@ def _compute_list_col_widths(config, engines: list[str]) -> dict[str, int]:
 
 def find_workitems_referencing_provider(
     workspace_path: Path, provider_name: str
-) -> list[str]:
+) -> List[str]:
     """扫描 workspace 下所有工作项，列出 setting.json 中 provider == provider_name 的工作项名称。
 
     用于删除前的警告提示。不影响命令成功与否。
     """
-    referenced: list[str] = []
+    referenced: List[str] = []
     if not workspace_path.is_dir():
         return referenced
 

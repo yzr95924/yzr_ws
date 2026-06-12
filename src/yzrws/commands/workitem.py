@@ -18,14 +18,13 @@
 doc/workitem_create_design.md。
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 from yzrws import paths
 from yzrws.commands import REGISTRY
@@ -299,7 +298,7 @@ def _build_parser() -> argparse.ArgumentParser:
 # ==================================================================
 
 
-def _resolve_workitem_dir(workspace_path: Path, name: str) -> Path | None:
+def _resolve_workitem_dir(workspace_path: Path, name: str) -> Optional[Path]:
     """检查 workitem 存在性，返回其目录；不存在返回 None。"""
     if not is_valid_workitem_name(name):
         return None
@@ -309,7 +308,7 @@ def _resolve_workitem_dir(workspace_path: Path, name: str) -> Path | None:
     return target
 
 
-def _read_setting(target: Path) -> dict | None:
+def _read_setting(target: Path) -> Optional[Dict]:
     """读取 workitem 的 setting.json；不存在或解析失败时返回 None。"""
     setting_path = target / "setting.json"
     if not setting_path.is_file():
@@ -556,7 +555,7 @@ def run_start(args: argparse.Namespace) -> int:
         return 1
 
     # 7. 确定是否恢复会话
-    session_to_resume: SessionInfo | None = None
+    session_to_resume: Optional[SessionInfo] = None
     if target_session is not None and target_session.session_id:
         if engine.validate_session(target_session.session_id):
             session_to_resume = target_session
@@ -659,7 +658,7 @@ def run_start(args: argparse.Namespace) -> int:
 def _auto_create_workitem(
     workspace_path: Path,
     name: str,
-    engine: str | None,
+    engine: Optional[str],
 ) -> bool:
     """自动创建工作项（yzrws workitem start 在 workitem 不存在时调用）。
 
@@ -815,7 +814,7 @@ def run_show(args: argparse.Namespace) -> int:
     # 读取 setting.json + workitem.json
     setting = _read_setting(target) or {}
     workitem_json = target / "workitem.json"
-    workitem_data: dict = {}
+    workitem_data: Dict = {}
     if workitem_json.is_file():
         try:
             w = json.loads(workitem_json.read_text(encoding="utf-8"))
@@ -843,7 +842,7 @@ def run_show(args: argparse.Namespace) -> int:
     print_workitem_show_header()
 
     # Section 1: 基本信息
-    basic_rows: list[tuple[str, str]] = [
+    basic_rows: List[Tuple[str, str]] = [
         ("name", name),
         ("path", str(target)),
         ("status", str(workitem_data.get("status", "—"))),
@@ -858,7 +857,7 @@ def run_show(args: argparse.Namespace) -> int:
     raw_outline_display = str(raw_outline) if raw_outline else "（未设置）"
     raw_read_only = setting.get("outline_read_only", False)
     raw_read_only_display = "true（只读）" if raw_read_only else "false（读写）"
-    setting_rows: list[tuple[str, str]] = [
+    setting_rows: List[Tuple[str, str]] = [
         ("engine", str(setting.get("engine", "—"))),
         ("model", str(setting.get("model", "—"))),
         ("provider", raw_provider_display),
@@ -876,7 +875,7 @@ def run_show(args: argparse.Namespace) -> int:
     agent_types_display = (
         ", ".join(resolved.agent_types) if resolved.agent_types else "—"
     )
-    resolved_rows: list[tuple[str, str]] = [
+    resolved_rows: List[Tuple[str, str]] = [
         ("source", source_label),
         ("provider", str(resolved.provider_name) if resolved.provider_name else "—"),
         ("model", str(resolved.model) if resolved.model else "—"),
@@ -1044,7 +1043,7 @@ def run_unset_outline_readonly(args: argparse.Namespace) -> int:
 # ==================================================================
 
 
-def _precheck_session_target(workspace_path: Path, name: str) -> Path | None:
+def _precheck_session_target(workspace_path: Path, name: str) -> Optional[Path]:
     """session 子命令的公共前置检查 + 迁移。
 
     流程：workspace 初始化 → workitem 存在 → 迁移旧 session 格式 → 返回 dir。
@@ -1110,7 +1109,7 @@ def _build_session_parser() -> argparse.ArgumentParser:
 # ==================================================================
 
 
-def _session_list_col_widths(sessions: list) -> dict[str, int]:
+def _session_list_col_widths(sessions: list) -> Dict[str, int]:
     """根据实际数据动态计算列宽。"""
     titles = [s.title or "—" for s in sessions] + ["TITLE"]
     engines = [s.engine or "—" for s in sessions] + ["ENGINE"]

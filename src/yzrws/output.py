@@ -10,8 +10,9 @@
 """
 
 import unicodedata
-from dataclasses import dataclass
+
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 # ---- 状态标签（中文，与设计文档 doc/workspace_init_design.md 对齐）----
 STATUS_EXISTS = "已存在"
@@ -20,7 +21,6 @@ STATUS_ERROR = "错误"
 STATUS_WARN = "警告"
 
 
-@dataclass(frozen=True)
 class CheckItem:
     """单条自检项。
 
@@ -32,11 +32,40 @@ class CheckItem:
         note: 附加说明，例如版本号、损坏原因等；为空时不在报告中显示。
     """
 
-    name: str
-    path: Path | None
-    kind: str
-    status: str
-    note: str = ""
+    __slots__ = ("name", "path", "kind", "status", "note")
+
+    def __init__(
+        self,
+        name,  # type: str
+        path,  # type: Optional[Path]
+        kind,  # type: str
+        status,  # type: str
+        note="",  # type: str
+    ):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "note", note)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
+
+    def _replace(self, **kwargs):
+        """返回一个新 CheckItem，替换指定字段。
+
+        等价于 dataclasses.replace()，供 workspace.py 使用。
+        """
+        return CheckItem(
+            name=kwargs.get("name", self.name),
+            path=kwargs.get("path", self.path),
+            kind=kwargs.get("kind", self.kind),
+            status=kwargs.get("status", self.status),
+            note=kwargs.get("note", self.note),
+        )
 
 
 def print_banner(title: str) -> None:
@@ -55,7 +84,7 @@ def _display_width(text: str) -> int:
     return width
 
 
-def print_items(items: list[CheckItem]) -> None:
+def print_items(items: List[CheckItem]) -> None:
     """逐行打印自检项，不含头尾装饰。
 
     状态标签按显示宽度对齐到本批 items 中的最宽标签，
@@ -184,7 +213,7 @@ def print_list_header() -> None:
     print()
 
 
-def print_list_table_header(col_widths: dict[str, int]) -> None:
+def print_list_table_header(col_widths: Dict[str, int]) -> None:
     """打印表头行（列名），列宽由 col_widths 指定。"""
     row = "  ".join(
         _pad(label, col_widths[key])
@@ -206,7 +235,7 @@ def print_list_row(
     status: str,
     engine: str,
     created: str,
-    col_widths: dict[str, int],
+    col_widths: Dict[str, int],
 ) -> None:
     """打印单行工作项数据，列宽对齐 col_widths。"""
     row = "  ".join(
@@ -249,7 +278,7 @@ def print_provider_empty() -> None:
     print("提示：执行 yzrws model provider add 添加一个 Provider")
 
 
-def print_provider_list_header(col_widths: dict[str, int]) -> None:
+def print_provider_list_header(col_widths: Dict[str, int]) -> None:
     """打印 provider list 表格的表头与分隔线。
 
     列：NAME / BASE_URL / MODEL / AGENT_TYPES / DEFAULT。
@@ -279,7 +308,7 @@ def print_provider_list_row(
     model: str,
     agent_types_display: str,
     is_default: bool,
-    col_widths: dict[str, int],
+    col_widths: Dict[str, int],
 ) -> None:
     """打印 provider list 的单行数据，DEFAULT 列用 `★` 标记。"""
     row = "  ".join(
@@ -340,7 +369,7 @@ def print_provider_removed(name: str, target_path, *, was_default: bool) -> None
     print("=== 删除成功 ===")
 
 
-def print_unused_provider_warning(referenced: list[str], removed_name: str) -> None:
+def print_unused_provider_warning(referenced: List[str], removed_name: str) -> None:
     """删除 Provider 后，若有工作项仍引用该 Provider，打印警告。"""
     if not referenced:
         return
@@ -371,7 +400,7 @@ def print_workitem_set_model(
     provider_name: str,
     model: str,
     base_url: str,
-    agent_types: list[str],
+    agent_types: List[str],
 ) -> None:
     """打印 set-model 成功报告。"""
     print_banner("设置 Workitem 模型")
@@ -411,7 +440,7 @@ def print_workitem_show_header() -> None:
 
 def print_workitem_show_section(
     title: str,
-    rows: list[tuple[str, str]],
+    rows: List[Tuple[str, str]],
 ) -> None:
     """打印 workitem show 的单节键值对。
 
@@ -455,7 +484,7 @@ def print_provider_incompatible_for_engine(
     provider_name: str,
     workitem_name: str,
     workitem_engine: str,
-    provider_agent_types: list[str],
+    provider_agent_types: List[str],
 ) -> None:
     """打印 set-model 时 provider 与 workitem engine 不兼容的错误。"""
     compatible = ", ".join(provider_agent_types) if provider_agent_types else "（无）"
@@ -495,7 +524,7 @@ def _format_session_updated(updated_at: str) -> str:
     return f"{date_part} {time_part}"
 
 
-def print_session_list_header(col_widths: dict[str, int]) -> None:
+def print_session_list_header(col_widths: Dict[str, int]) -> None:
     """打印 session list 表头与分隔线。列：NAME / TITLE / ENGINE / UPDATED。"""
     row = "  ".join(
         _pad(label, col_widths[key])
@@ -519,7 +548,7 @@ def print_session_list_row(
     engine: str,
     updated_at: str,
     is_current: bool,
-    col_widths: dict[str, int],
+    col_widths: Dict[str, int],
 ) -> None:
     """打印 session list 单行；``is_current=True`` 时首列加 '★ ' 前缀。"""
     name_display = f"★ {name}" if is_current else f"  {name}"
@@ -535,7 +564,7 @@ def print_session_list_row(
     print(row)
 
 
-def print_session_list_empty(current: str | None) -> None:
+def print_session_list_empty(current: Optional[str]) -> None:
     """无 session 时的提示。current 为 None 时说明 '尚无 current 指针'。"""
     print("  （尚无 session）")
     print()
@@ -548,7 +577,7 @@ def print_session_list_empty(current: str | None) -> None:
     print("      或 yzrws workitem start <workitem> --session <name> 指定 session 名")
 
 
-def print_session_list_footer(current: str | None) -> None:
+def print_session_list_footer(current: Optional[str]) -> None:
     """list 末尾的 current 指针说明行。"""
     if current is None:
         print()
@@ -582,7 +611,7 @@ def print_session_show(
         print("当前 current：★ 是")
     print()
 
-    basic_rows: list[tuple[str, str]] = [
+    basic_rows: List[Tuple[str, str]] = [
         ("name", session_name),
         ("title", title or "—"),
         ("engine", engine or "—"),
@@ -590,7 +619,7 @@ def print_session_show(
     ]
     print_workitem_show_section("基本信息", basic_rows)
 
-    meta_rows: list[tuple[str, str]] = [
+    meta_rows: List[Tuple[str, str]] = [
         ("model", model or "—"),
         ("provider", provider or "—"),
         ("created_at", created_at or "—"),
@@ -598,7 +627,7 @@ def print_session_show(
     ]
     print_workitem_show_section("会话元数据", meta_rows)
 
-    status_rows: list[tuple[str, str]] = [
+    status_rows: List[Tuple[str, str]] = [
         ("status", status or "—"),
         ("resume_count", str(resume_count)),
     ]
@@ -629,7 +658,7 @@ def print_session_removed(
 def print_session_use_changed(
     *,
     workitem_name: str,
-    old: str | None,
+    old: Optional[str],
     new: str,
 ) -> None:
     """打印切换 current 指针成功报告。"""

@@ -5,8 +5,6 @@
 反转语义相比更直观，2026-06 重构时统一）。
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 

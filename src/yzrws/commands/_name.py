@@ -4,8 +4,6 @@
 所有需要校验名称的命令（create / start / workitem / workitem session）共享。
 """
 
-from __future__ import annotations
-
 import re
 
 # workitem 名称正则：小写字母 / 数字开头，可含连字符和下划线，长度 1-64

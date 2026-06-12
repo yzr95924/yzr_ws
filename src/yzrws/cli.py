@@ -9,7 +9,7 @@
 
 import argparse
 import sys
-from typing import Sequence
+from typing import Optional, Sequence
 
 from yzrws.commands import REGISTRY
 
@@ -50,14 +50,14 @@ def _command_help(name: str) -> str:
     return handler.__doc__.strip().splitlines()[0]
 
 
-def _needs_help(argv: Sequence[str] | None) -> bool:
+def _needs_help(argv: Optional[Sequence[str]]) -> bool:
     """判断原始参数是否请求顶层帮助（无命令名 + -h/--help）。"""
     if argv is None:
         argv = sys.argv[1:]
     return bool(argv) and argv[0] in ("-h", "--help")
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI 主入口：parse → dispatch → 返回退出码。
 
     使用 parse_known_args 而非 parse_args，以便子命令（如 workitem create）

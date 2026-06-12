@@ -5,10 +5,9 @@ commands/workitem.py 下的 `workitem create` 子命令）；helper 现在被
 workitem create 与 start 共享。
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from yzrws.workspace import atomic_write_json, atomic_write_text, now_iso
 
@@ -51,7 +50,7 @@ def check_path_exists(
     target: Path,
     name: str,  # noqa: ARG001
     workspace_path: Path,  # noqa: ARG001
-) -> str | None:
+) -> Optional[str]:
     """检查目标路径是否已存在。
 
     返回值：
@@ -71,7 +70,7 @@ def check_path_exists(
 # ==================================================================
 
 
-def resolve_engine(cli_engine: str | None) -> str:
+def resolve_engine(cli_engine: Optional[str]) -> str:
     """确定引擎名称，优先级从高到低：
 
     1. --engine 命令行参数
@@ -105,7 +104,7 @@ def resolve_engine(cli_engine: str | None) -> str:
 def create_directories(
     target: Path,
     name: str,
-) -> list[tuple[str, str]]:
+) -> List[Tuple[str, str]]:
     """创建工作项目录结构，返回 [(action, item)] 列表用于报告。
 
     创建：
@@ -113,7 +112,7 @@ def create_directories(
       - <name>/raw/
       - <name>/local_wiki/（含 .gitkeep）
     """
-    items: list[tuple[str, str]] = []
+    items: List[Tuple[str, str]] = []
 
     target.mkdir(parents=True, exist_ok=True)
     items.append(("创建", f"{name}/"))
@@ -138,7 +137,7 @@ def write_initial_files(
     target: Path,
     name: str,
     engine: str,
-) -> list[tuple[str, str]]:
+) -> List[Tuple[str, str]]:
     """写入初始文件，返回 [(action, item)] 列表用于报告。
 
     写入：
@@ -146,7 +145,7 @@ def write_initial_files(
       - setting.json   引擎配置
       - CLAUDE.md      工作项上下文（带模板引导）
     """
-    items: list[tuple[str, str]] = []
+    items: List[Tuple[str, str]] = []
     now = now_iso()
 
     # workitem.json
@@ -183,7 +182,7 @@ def write_initial_files(
 # ==================================================================
 
 
-def update_metadata(workspace_path: Path, name: str) -> tuple[int, int]:
+def update_metadata(workspace_path: Path, name: str) -> Tuple[int, int]:
     """更新 workspace 级 metadata.json，返回 (count_before, count_after)。
 
     更新内容（对齐 doc/workitem_create_design.md §元数据同步）：

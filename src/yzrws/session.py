@@ -16,13 +16,12 @@
 迁移函数是幂等的。
 """
 
-from __future__ import annotations
-
 import json
 import re
-from dataclasses import dataclass
+
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from yzrws.workspace import atomic_write_json
 
@@ -43,9 +42,8 @@ def _is_valid_session_filename(stem: str) -> bool:
     return bool(_SESSION_NAME_RE.match(stem))
 
 
-@dataclass
 class SessionInfo:
-    """会话信息。
+    """会话信息（可变）。
 
     Attributes:
         name: session 名（来自 ``sessions/<name>.json`` 的文件名）
@@ -61,17 +59,26 @@ class SessionInfo:
         archived_at: 归档时间（仅归档 session 有）
     """
 
-    name: str
-    engine: str
-    session_id: str
-    status: str
-    title: str = ""
-    model: str | None = None
-    provider: str | None = None
-    created_at: str = ""
-    updated_at: str = ""
-    resume_count: int = 0
-    archived_at: str = ""
+    __slots__ = (
+        "name", "engine", "session_id", "status", "title",
+        "model", "provider", "created_at", "updated_at",
+        "resume_count", "archived_at",
+    )
+
+    def __init__(self, name, engine, session_id, status, title="",
+                 model=None, provider=None, created_at="",
+                 updated_at="", resume_count=0, archived_at=""):
+        self.name = name
+        self.engine = engine
+        self.session_id = session_id
+        self.status = status
+        self.title = title
+        self.model = model
+        self.provider = provider
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.resume_count = resume_count
+        self.archived_at = archived_at
 
 
 def _session_path(workitem_dir: Path, name: str) -> Path:
@@ -128,7 +135,7 @@ def _from_info(session: SessionInfo) -> dict:
 # ==================================================================
 
 
-def get_current_session_name(workitem_dir: Path) -> str | None:
+def get_current_session_name(workitem_dir: Path) -> Optional[str]:
     """读 ``session.json`` 拿 current session 名。
 
     Returns:
@@ -151,7 +158,7 @@ def get_current_session_name(workitem_dir: Path) -> str | None:
     return current
 
 
-def set_current_session_name(workitem_dir: Path, name: str | None) -> None:
+def set_current_session_name(workitem_dir: Path, name: Optional[str]) -> None:
     """原子写 ``{"current": <name>}``。``name=None`` 时写 ``{"current": null}``。"""
     session_path = workitem_dir / _SESSION_FILE
     atomic_write_json(session_path, {"current": name})
@@ -162,7 +169,7 @@ def set_current_session_name(workitem_dir: Path, name: str | None) -> None:
 # ==================================================================
 
 
-def read_session_by_name(workitem_dir: Path, name: str) -> SessionInfo | None:
+def read_session_by_name(workitem_dir: Path, name: str) -> Optional[SessionInfo]:
     """读 ``sessions/<name>.json``，返回 ``SessionInfo`` 或 None。
 
     name 非法时抛 ``ValueError``；文件不存在 / 解析失败时返回 None。
@@ -189,7 +196,7 @@ def write_session(workitem_dir: Path, session: SessionInfo) -> None:
     atomic_write_json(_session_path(workitem_dir, session.name), _from_info(session))
 
 
-def read_current_session(workitem_dir: Path) -> SessionInfo | None:
+def read_current_session(workitem_dir: Path) -> Optional[SessionInfo]:
     """便捷函数：读 current 指针并返回对应的 ``SessionInfo``（找不到时 None）。"""
     name = get_current_session_name(workitem_dir)
     if name is None:
@@ -202,7 +209,7 @@ def read_current_session(workitem_dir: Path) -> SessionInfo | None:
 # ==================================================================
 
 
-def list_sessions(workitem_dir: Path) -> list[SessionInfo]:
+def list_sessions(workitem_dir: Path) -> List[SessionInfo]:
     """列举用户命名 session（按 updated_at 倒序，无该字段时按 mtime）。
 
     Returns:
@@ -212,7 +219,7 @@ def list_sessions(workitem_dir: Path) -> list[SessionInfo]:
     if not sessions_root.is_dir():
         return []
 
-    result: list[SessionInfo] = []
+    result: List[SessionInfo] = []
     for path in sessions_root.glob("*.json"):
         if not _is_valid_session_filename(path.stem):
             continue
@@ -228,7 +235,7 @@ def list_sessions(workitem_dir: Path) -> list[SessionInfo]:
     # 排序：updated_at 倒序；缺字段时按 mtime 倒序，且整体排在末尾。
     # 用 (has_updated, updated_or_empty, neg_mtime) 做 key；reverse=True 时
     # has_updated=1 的组排前面，has_updated=0 的组排末尾。
-    def _sort_key(info: SessionInfo) -> tuple[int, str, float]:
+    def _sort_key(info: SessionInfo) -> Tuple[int, str, float]:
         try:
             neg_mtime = -(_session_path(workitem_dir, info.name)).stat().st_mtime
         except OSError:
@@ -283,7 +290,7 @@ def archive_session(workitem_dir: Path, session: SessionInfo) -> Path:
 
 def find_latest_session_for_engine(
     workitem_dir: Path, engine: str
-) -> SessionInfo | None:
+) -> Optional[SessionInfo]:
     """从 ``sessions/_archive_<engine>_*.json`` 找指定引擎的最新历史 session。
 
     Returns:

@@ -5,8 +5,8 @@
 
 import argparse
 import json
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from yzrws import paths
 from yzrws.commands import REGISTRY
@@ -29,15 +29,23 @@ _MIN_COL_WIDTHS = {"name": 4, "status": 6, "engine": 6, "created": 10}
 _MISSING = "—"
 
 
-@dataclass(frozen=True)
 class WorkitemInfo:
-    """从 workitem.json 和 setting.json 读取的工作项元数据。"""
+    """从 workitem.json 和 setting.json 读取的工作项元数据（不可变）。"""
 
-    name: str
-    status: str
-    engine: str
-    created_at: str  # ISO 8601 原始值
-    created_display: str  # 格式化后的显示值（YYYY-MM-DD 或 —）
+    __slots__ = ("name", "status", "engine", "created_at", "created_display")
+
+    def __init__(self, name, status, engine, created_at, created_display):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "engine", engine)
+        object.__setattr__(self, "created_at", created_at)
+        object.__setattr__(self, "created_display", created_display)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -92,7 +100,7 @@ def run(args: argparse.Namespace) -> int:
 # ==================================================================
 
 
-def _scan_workitems(workspace_path: Path) -> list[WorkitemInfo]:
+def _scan_workitems(workspace_path: Path) -> List[WorkitemInfo]:
     """扫描 workspace 下所有包含 workitem.json 的子目录。
 
     跳过以下情况：
@@ -100,7 +108,7 @@ def _scan_workitems(workspace_path: Path) -> list[WorkitemInfo]:
       - 无 workitem.json 的目录
       - workitem.json 解析失败的目录
     """
-    workitems: list[WorkitemInfo] = []
+    workitems: List[WorkitemInfo] = []
 
     if not workspace_path.is_dir():
         return workitems
@@ -118,7 +126,7 @@ def _scan_workitems(workspace_path: Path) -> list[WorkitemInfo]:
     return workitems
 
 
-def _read_workitem_info(dir_path: Path, workitem_json: Path) -> WorkitemInfo | None:
+def _read_workitem_info(dir_path: Path, workitem_json: Path) -> Optional[WorkitemInfo]:
     """读取单个工作项的元数据。解析失败时返回 None。"""
     try:
         data = json.loads(workitem_json.read_text(encoding="utf-8"))
@@ -185,7 +193,7 @@ def _format_date(iso_str: str) -> str:
 # ==================================================================
 
 
-def _compute_col_widths(workitems: list[WorkitemInfo]) -> dict[str, int]:
+def _compute_col_widths(workitems: List[WorkitemInfo]) -> Dict[str, int]:
     """根据实际数据动态计算列宽，保证表头和数据对齐。
 
     每列宽度 = max(表头文本长度, 该列所有数据值的最大长度)

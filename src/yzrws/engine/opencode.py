@@ -12,6 +12,7 @@ yzrws 在 sync_rules 时把 ResolvedModel 写入 opencode.json。
 import json
 import subprocess
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from yzrws.provider import ResolvedModel
 from yzrws.workspace import atomic_write_json
@@ -33,7 +34,7 @@ class OpenCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """启动新的 OpenCode 会话。
 
@@ -59,7 +60,7 @@ class OpenCodeEngine(AgentEngine):
         workitem_dir: Path,
         session_id: str,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """恢复指定会话。
 
@@ -75,7 +76,7 @@ class OpenCodeEngine(AgentEngine):
         )
         return result.returncode
 
-    def extract_session_id(self, workitem_dir: Path) -> str | None:
+    def extract_session_id(self, workitem_dir: Path) -> Optional[str]:
         """从 opencode session list 提取最新的 session ID。
 
         执行 opencode session list 并解析 JSON 输出。
@@ -157,7 +158,7 @@ class OpenCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> None:
         """生成 / 更新 opencode.json。
 
@@ -210,7 +211,7 @@ class OpenCodeEngine(AgentEngine):
     def sync_mcp(
         self,
         workitem_dir: Path,
-        mcp_config: dict | None,
+        mcp_config: Optional[Dict],
         *,
         read_only: bool = False,  # noqa: ARG002
     ) -> None:
@@ -260,7 +261,7 @@ class OpenCodeEngine(AgentEngine):
         # 原子写回
         atomic_write_json(config_path, config)
 
-    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+    def _get_command(self, model: Optional[ResolvedModel] = None) -> List[str]:
         """OpenCode 不接受 CLI model 标志（model 由 opencode.json 提供）；
         为对齐抽象接口签名仍接受 ``model`` 参数但不使用。
         """

@@ -20,6 +20,7 @@ settings.json，覆盖用户级同名 env，确保 base URL / auth token
 import os
 import subprocess
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from yzrws.outline import OUTLINE_WRITE_TOOLS
 from yzrws.provider import ResolvedModel
@@ -41,7 +42,7 @@ class ClaudeCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """启动新的 Claude Code 会话。
 
@@ -65,7 +66,7 @@ class ClaudeCodeEngine(AgentEngine):
         workitem_dir: Path,
         session_id: str,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """恢复指定会话。
 
@@ -82,7 +83,7 @@ class ClaudeCodeEngine(AgentEngine):
         )
         return result.returncode
 
-    def extract_session_id(self, workitem_dir: Path) -> str | None:
+    def extract_session_id(self, workitem_dir: Path) -> Optional[str]:
         """从 ~/.claude/projects/ 提取最新的 session ID。
 
         Claude Code 将 session 存储在按项目路径编码的目录下。
@@ -138,7 +139,7 @@ class ClaudeCodeEngine(AgentEngine):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> None:
         """同步 yzrws 解析的 base URL / auth token / model 到项目级
         ``<workitem>/.claude/settings.json`` 的 env 块。
@@ -192,7 +193,7 @@ class ClaudeCodeEngine(AgentEngine):
     def sync_mcp(
         self,
         workitem_dir: Path,
-        mcp_config: dict | None,
+        mcp_config: Optional[Dict],
         *,
         read_only: bool = False,
     ) -> None:
@@ -282,7 +283,7 @@ class ClaudeCodeEngine(AgentEngine):
         claude_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(settings_local_path, config)
 
-    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+    def _get_command(self, model: Optional[ResolvedModel] = None) -> List[str]:
         """构造 claude 命令行参数列表。
 
         仅 ``--model`` 是合法的 Claude CLI flag（``--base-url`` /
@@ -297,7 +298,7 @@ class ClaudeCodeEngine(AgentEngine):
             return ["claude", "--model", model.model]
         return ["claude"]
 
-    def _build_env(self, model: ResolvedModel | None) -> dict[str, str]:
+    def _build_env(self, model: Optional[ResolvedModel]) -> Dict[str, str]:
         """构造 subprocess 环境变量，把 ResolvedModel 注入到 ANTHROPIC_*。
 
         model 为 None 或字段为 None 时，不覆盖对应环境变量。
@@ -313,7 +314,7 @@ class ClaudeCodeEngine(AgentEngine):
             env["ANTHROPIC_MODEL"] = model.model
         return env
 
-    def _get_projects_dir(self) -> Path | None:
+    def _get_projects_dir(self) -> Optional[Path]:
         """获取 Claude Code 的 projects 存储目录。"""
         claude_dir = Path.home() / ".claude"
         projects_dir = claude_dir / "projects"

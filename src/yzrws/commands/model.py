@@ -11,8 +11,6 @@
 所有 Provider 配置统一存放在 workspace 下的 .config/provider.json。
 """
 
-from __future__ import annotations
-
 import argparse
 
 from yzrws.commands import REGISTRY

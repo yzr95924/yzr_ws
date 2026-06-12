@@ -21,10 +21,11 @@
 import json
 import os
 import tempfile
-from dataclasses import dataclass, replace
+
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from .errors import WritePermissionError
 from .output import (
@@ -67,14 +68,22 @@ class InitFatalError(Exception):
         self.hint = hint
 
 
-@dataclass(frozen=True)
 class InspectionResult:
-    """一次 inspect_state 的结果。"""
+    """一次 inspect_state 的结果（不可变）。"""
 
-    terminal: TerminalState
-    items: list[CheckItem]
-    metadata_version: str | None  # None = 文件缺失或 JSON 损坏
-    metadata_raw_error: str = ""  # JSON 损坏时的错误信息
+    __slots__ = ("terminal", "items", "metadata_version", "metadata_raw_error")
+
+    def __init__(self, terminal, items, metadata_version, metadata_raw_error=""):
+        object.__setattr__(self, "terminal", terminal)
+        object.__setattr__(self, "items", items)
+        object.__setattr__(self, "metadata_version", metadata_version)
+        object.__setattr__(self, "metadata_raw_error", metadata_raw_error)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
 
 
 # ==================================================================
@@ -125,7 +134,7 @@ def _check_writable(workspace: Path) -> None:
 # ==================================================================
 
 
-def _read_metadata_version(metadata_path: Path) -> tuple[str | None, str]:
+def _read_metadata_version(metadata_path: Path) -> Tuple[Optional[str], str]:
     """读取 metadata.json 的 version 字段。
 
     Returns:
@@ -174,9 +183,9 @@ def _version_status(actual: str) -> str:
 
 def _build_items(
     workspace: Path,
-    metadata_version: str | None,
+    metadata_version: Optional[str],
     metadata_raw_error: str,
-) -> list[CheckItem]:
+) -> List[CheckItem]:
     """构造 6 项自检清单。
 
     每项的 status 是"检查时刻"的状态：
@@ -335,7 +344,7 @@ def _write_memory_if_missing(workspace: Path) -> bool:
     return True
 
 
-def init(workspace: Path) -> list[CheckItem]:
+def init(workspace: Path) -> List[CheckItem]:
     """执行 workspace 初始化，返回用于报告的 CheckItem 列表。
 
     行为：
@@ -364,7 +373,7 @@ def init(workspace: Path) -> list[CheckItem]:
     # workspace 目录本身不在跟踪集内——按设计文档样例，它在报告里
     # 始终是 [已存在]（不论是刚 mkdir 还是早已存在）。
     workspace.mkdir(parents=True, exist_ok=True)
-    created_paths: set[Path] = set()
+    created_paths = set()  # type: set
 
     knowledge = workspace / "knowledge"
     if _ensure_directory(knowledge):
@@ -384,7 +393,7 @@ def init(workspace: Path) -> list[CheckItem]:
     # 完成后重新检查，得到真实最终状态；并把"本次创建"标记上去。
     final = inspect_state(workspace)
     return [
-        replace(item, status=STATUS_CREATED)
+        item._replace(status=STATUS_CREATED)
         if item.kind in ("directory", "file") and item.path in created_paths
         else item
         for item in final.items

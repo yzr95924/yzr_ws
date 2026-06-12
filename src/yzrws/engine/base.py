@@ -6,6 +6,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from yzrws.provider import ResolvedModel
 
@@ -26,7 +27,7 @@ class AgentEngine(ABC):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """启动新的交互式会话。
 
@@ -44,7 +45,7 @@ class AgentEngine(ABC):
         workitem_dir: Path,
         session_id: str,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> int:
         """恢复指定会话。
 
@@ -58,7 +59,7 @@ class AgentEngine(ABC):
         """
 
     @abstractmethod
-    def extract_session_id(self, workitem_dir: Path) -> str | None:
+    def extract_session_id(self, workitem_dir: Path) -> Optional[str]:
         """从引擎本地存储提取最新的 session ID。
 
         会话结束后调用，用于记录 session_id 到 session.json。
@@ -86,7 +87,7 @@ class AgentEngine(ABC):
         self,
         workitem_dir: Path,
         *,
-        model: ResolvedModel | None = None,
+        model: Optional[ResolvedModel] = None,
     ) -> None:
         """同步 yzrws 解析的模型配置到引擎原生位置。
 
@@ -103,7 +104,7 @@ class AgentEngine(ABC):
     def sync_mcp(
         self,
         workitem_dir: Path,
-        mcp_config: dict | None,
+        mcp_config: Optional[Dict],
         *,
         read_only: bool = False,
     ) -> None:
@@ -134,7 +135,7 @@ class AgentEngine(ABC):
         return shutil.which(cmd) is not None
 
     @abstractmethod
-    def _get_command(self, model: ResolvedModel | None = None) -> list[str]:
+    def _get_command(self, model: Optional[ResolvedModel] = None) -> List[str]:
         """返回引擎的可执行命令及其参数（如 ``["claude"]`` 或
         ``["claude", "--model", "qwen3.7-max"]``）。
 

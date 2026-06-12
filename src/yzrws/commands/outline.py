@@ -11,11 +11,10 @@
 所有 Outline 配置存放在 workspace 下的 <workspace>/.config/outline.json。
 """
 
-from __future__ import annotations
-
 import argparse
 import getpass
 import sys
+from typing import Optional
 
 from yzrws import paths
 from yzrws.commands import REGISTRY
@@ -151,7 +150,7 @@ def _require_workspace(workspace_path) -> None:
         raise _AbortError
 
 
-def _prompt_or_arg(label: str, cli_value: str | None, *, validator) -> str:
+def _prompt_or_arg(label: str, cli_value: Optional[str], *, validator) -> str:
     """从 CLI 参数取值；为空时进入交互式输入，使用 validator 校验。"""
     if cli_value:
         value = cli_value
@@ -169,7 +168,7 @@ def _prompt_or_arg(label: str, cli_value: str | None, *, validator) -> str:
     return value
 
 
-def _prompt_secret(label: str, cli_value: str | None) -> str:
+def _prompt_secret(label: str, cli_value: Optional[str]) -> str:
     """交互式隐藏输入 API key；CLI 传值时直接使用。"""
     if cli_value:
         return cli_value

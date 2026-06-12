@@ -31,12 +31,11 @@ agent_types 的有效值：
   - 空配置不写出 providers / default 字段，下次 load 后还原为空 ProviderConfig。
 """
 
-from __future__ import annotations
-
 import json
 import re
-from dataclasses import dataclass, field
+
 from pathlib import Path
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from yzrws.workspace import atomic_write_json
@@ -70,9 +69,8 @@ class ProviderConfigError(Exception):
 # ==================================================================
 
 
-@dataclass(frozen=True)
 class Provider:
-    """单个 Provider 的配置。
+    """单个 Provider 的配置（不可变）。
 
     Attributes:
         name: Provider 名称，对应 providers map 的 key。
@@ -83,13 +81,24 @@ class Provider:
             选中与当前 engine 不兼容的 provider。缺省时回退到所有已注册 engine。
     """
 
-    name: str
-    base_url: str
-    auth_key: str
-    model: str
-    agent_types: list[str] = field(default_factory=list)
+    __slots__ = ("name", "base_url", "auth_key", "model", "agent_types")
 
-    def resolved_agent_types(self, all_engine_names: list[str]) -> list[str]:
+    def __init__(self, name, base_url, auth_key, model, agent_types=None):
+        if agent_types is None:
+            agent_types = []
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "base_url", base_url)
+        object.__setattr__(self, "auth_key", auth_key)
+        object.__setattr__(self, "model", model)
+        object.__setattr__(self, "agent_types", list(agent_types))
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
+
+    def resolved_agent_types(self, all_engine_names):
         """返回该 provider 实际生效的 agent_types。
 
         缺省时（agent_types 为空列表）回退到 `all_engine_names`；
@@ -100,23 +109,27 @@ class Provider:
         return list(all_engine_names)
 
 
-@dataclass
 class ProviderConfig:
-    """workspace 级的 Provider 配置。
+    """workspace 级的 Provider 配置（可变）。
 
     Attributes:
         providers: 名称 → Provider 映射。
         default: 默认 Provider 名称；为 None 表示无默认。
     """
 
-    providers: dict[str, Provider] = field(default_factory=dict)
-    default: str | None = None
+    __slots__ = ("providers", "default")
 
-    def is_empty(self) -> bool:
+    def __init__(self, providers=None, default=None):
+        if providers is None:
+            providers = {}
+        self.providers = dict(providers)
+        self.default = default
+
+    def is_empty(self):
         """配置是否为空（无任何 Provider，也无 default）。"""
         return not self.providers and self.default is None
 
-    def provider_names(self) -> list[str]:
+    def provider_names(self):
         """按字母序返回所有 Provider 名称。"""
         return sorted(self.providers.keys())
 
@@ -156,7 +169,7 @@ def is_valid_base_url(url: str) -> bool:
     return bool(parsed.scheme) and bool(parsed.netloc)
 
 
-def is_valid_agent_type(name: str, all_engine_names: list[str]) -> bool:
+def is_valid_agent_type(name: str, all_engine_names: List[str]) -> bool:
     """校验 agent_type 名称是否合法。
 
     合法的 agent_type 名称可以是：
@@ -217,14 +230,14 @@ def _parse_config(data: dict, *, source: Path) -> ProviderConfig:
     if not isinstance(providers_raw, dict):
         raise ProviderConfigError(f"{source} 的 providers 字段必须是对象")
 
-    providers: dict[str, Provider] = {}
+    providers: Dict[str, Provider] = {}
     for name, entry in providers_raw.items():
         if not isinstance(entry, dict):
             raise ProviderConfigError(f"{source} 的 providers.{name} 字段必须是对象")
         providers[name] = _parse_provider(name, entry, source)
 
     default_raw = data.get("default")
-    default: str | None
+    default: Optional[str]
     if default_raw is None:
         default = None
     elif isinstance(default_raw, str):
@@ -250,7 +263,7 @@ def _parse_provider(name: str, entry: dict, source: Path) -> Provider:
 
     # agent_types 可选：缺省 / 非 list / 元素非 str 均视为"全部兼容"，记为空列表
     agent_types_raw = entry.get("agent_types")
-    agent_types: list[str]
+    agent_types: List[str]
     if agent_types_raw is None:
         agent_types = []
     elif isinstance(agent_types_raw, list) and all(
@@ -281,12 +294,12 @@ def _config_to_dict(config: ProviderConfig) -> dict:
     """将 ProviderConfig 序列化为 dict。
 
     空 providers 时不输出 providers 字段；default 缺失时不输出 default 字段。
-    agent_types 缺省时（即 dataclass 中为空列表）也不写出——下次 load 同样视为
+    agent_types 缺省时（即空列表）也不写出——下次 load 同样视为
     "全部兼容"，可避免在引入新 engine 时改动旧 provider.json。
     """
     out: dict = {}
     if config.providers:
-        providers_dict: dict[str, dict] = {}
+        providers_dict: Dict[str, dict] = {}
         for name, p in config.providers.items():
             entry: dict = {
                 "base_url": p.base_url,
@@ -381,9 +394,8 @@ SOURCE_WORKSPACE_DEFAULT = "workspace_default"
 SOURCE_NONE = "none"
 
 
-@dataclass(frozen=True)
 class ResolvedModel:
-    """按回退链解析后的最终生效模型配置。
+    """按回退链解析后的最终生效模型配置（不可变）。
 
     Attributes:
         base_url: API 端点；可能为 None（表示引擎使用内置默认）。
@@ -395,18 +407,31 @@ class ResolvedModel:
             警告检查。空列表表示未命中（即 source="none"）。
     """
 
-    base_url: str | None
-    auth_key: str | None
-    model: str | None
-    provider_name: str | None
-    source: str
-    agent_types: list[str] = field(default_factory=list)
+    __slots__ = ("base_url", "auth_key", "model", "provider_name",
+                 "source", "agent_types")
+
+    def __init__(self, base_url, auth_key, model, provider_name,
+                 source, agent_types=None):
+        if agent_types is None:
+            agent_types = []
+        object.__setattr__(self, "base_url", base_url)
+        object.__setattr__(self, "auth_key", auth_key)
+        object.__setattr__(self, "model", model)
+        object.__setattr__(self, "provider_name", provider_name)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "agent_types", list(agent_types))
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
 
 
 def resolve_model_config(
     setting: dict,
     workspace_config: ProviderConfig,
-    all_engine_names: list[str] | None = None,
+    all_engine_names: Optional[List[str]] = None,
 ) -> ResolvedModel:
     """按 doc/provider_design.md §回退链 解析 workitem 最终生效的模型配置。
 
@@ -425,7 +450,7 @@ def resolve_model_config(
     """
     engines = all_engine_names or []
 
-    def _types_of(p: Provider) -> list[str]:
+    def _types_of(p: Provider) -> List[str]:
         if p.agent_types:
             return list(p.agent_types)
         return list(engines)

@@ -18,11 +18,9 @@ outline.json 的 schema：
   - 启动时 outline.json 缺失或字段损坏 → 不报错，打印 WARN 并跳过。
 """
 
-from __future__ import annotations
-
 import json
-from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 from urllib.parse import urlparse
 
 from yzrws.workspace import atomic_write_json
@@ -62,17 +60,25 @@ class OutlineConfigError(Exception):
 # ==================================================================
 
 
-@dataclass(frozen=True)
 class OutlineConfig:
-    """Outline 连接配置。
+    """Outline 连接配置（不可变）。
 
     Attributes:
         endpoint: Outline 实例 URL（不含 /mcp 路径，不含尾随 /）。
         auth_token: Outline API key（明文存储）。
     """
 
-    endpoint: str
-    auth_token: str
+    __slots__ = ("endpoint", "auth_token")
+
+    def __init__(self, endpoint, auth_token):
+        object.__setattr__(self, "endpoint", endpoint)
+        object.__setattr__(self, "auth_token", auth_token)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
 
 
 # ==================================================================
@@ -123,7 +129,7 @@ def mask_token(token: str) -> str:
 # ==================================================================
 
 
-def load_outline(path: Path) -> OutlineConfig | None:
+def load_outline(path: Path) -> Optional[OutlineConfig]:
     """从指定路径加载 Outline 配置。
 
     Args:
@@ -223,7 +229,7 @@ def build_mcp_config(config: OutlineConfig) -> dict:
 def resolve_mcp_config(
     setting: dict,
     workspace_path: Path,
-) -> dict | None:
+) -> Optional[dict]:
     """按 doc/outline_wiki_design.md §解析逻辑 解析 workitem 最终生效的 MCP 配置。
 
     Args:
@@ -282,12 +288,12 @@ def resolve_mcp_config(
 # ==================================================================
 
 
-def find_workitems_referencing_outline(workspace_path: Path) -> list[str]:
+def find_workitems_referencing_outline(workspace_path: Path) -> List[str]:
     """扫描 workspace 下所有 workitem 的 setting.json，返回引用了 outline 的名称。
 
     引用条件：setting.json.outline 字段为真值字符串（不为 null / 缺失）。
     """
-    referencing: list[str] = []
+    referencing: List[str] = []
 
     for child in sorted(workspace_path.iterdir()):
         if not child.is_dir():

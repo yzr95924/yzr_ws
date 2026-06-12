@@ -19,6 +19,16 @@
 
 ### project
 
+- Python 代码必须兼容 **Python 3.6**（确保可在老 OS 上运行）。
+  **Why:** 目标用户群体中有仍在使用老 OS 的情况，需要工具链能在低版本 Python 环境下正常工作。
+  **How to apply:**
+  1. 类型注解使用 `typing` 模块：`Dict`、`List`、`Tuple`、`Optional`、`Callable`、`Union` 等，**不使用** `dict[str, ...]` / `list[X]` / `X | None` 等 PEP 585 / PEP 604 语法（3.9+/3.10+）
+  2. **不使用** `from __future__ import annotations`（3.7+ 才支持）
+  3. **不使用** `dataclasses`（stdlib 从 3.7 开始提供；3.6 需 `pip install dataclasses` 回移植或改用普通类）
+  4. **不使用** 海象运算符 `:=`（3.8+）、f-string `=` 调试（3.8+）
+  5. 需要 `TypedDict` / `Literal` 等 3.8+ 特性时使用 `typing_extensions` 回移植
+  6. `collections.abc.Callable` 等 ABC 类**不在运行时下标**——统一从 `typing` 导入
+
 - Python 代码全部放在 `src/` 下：主包 `src/yzrws/`，开发工具（lint 调度器）
   `src/devtools/`；`scripts/` 仅保留 shell 脚本。
   **Why:** 语言分层清晰；`src/` 是 Python 社区惯用的产品代码布局；让 `scripts/`
